@@ -89,7 +89,7 @@ class RoadMap:
         return list(self.edges.keys())
 
 
-# Singleton — import this in your pathfinding and navigation code
+# singleton
 road_map = RoadMap()
 
 
