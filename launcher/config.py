@@ -12,12 +12,13 @@ SCRIPTS_DIR = PROJECT_ROOT / 'scripts'
 
 GODOT_PROJECT = GODOT_DIR
 GODOT_SCENES = {
-    'braitenberg': 'res://scenes/braitenberg.tscn',
-    'visual_lane_servoing': 'res://scenes/maps/lane_follower.tscn',
-    'introduction': 'res://scenes/maps/introduction.tscn',
-    'modcon': 'res://scenes/maps/Modconpath.tscn',
-    'navigator': 'res://scenes/maps/map_follower.tscn',
-    'object_detection': 'res://scenes/maps/lane_detect.tscn',
+  'braitenberg': 'res://scenes/braitenberg.tscn',
+  'visual_lane_servoing': 'res://scenes/maps/lane_follower.tscn',
+  'introduction': 'res://scenes/maps/introduction.tscn',
+  'modcon': 'res://scenes/maps/Modconpath.tscn',
+  'navigator': 'res://scenes/maps/map_follower.tscn',
+  'object_detection': 'res://scenes/maps/lane_detect.tscn',
+  'project': 'res://scenes/maps/introduction.tscn',
 }
 
 DEFAULT_WEB_PORT = 5000
@@ -27,16 +28,16 @@ DEFAULT_WHEEL_PORT = 5002
 
 
 def get_task_scene(task_name):
-    return GODOT_SCENES.get(task_name, f'res://scenes/{task_name}.tscn')
+  return GODOT_SCENES.get(task_name, f'res://scenes/{task_name}.tscn')
 
 
 def get_task_dir(task_name):
-    return TASKS_DIR / task_name
+  return TASKS_DIR / task_name
 
 
 def get_task_server(task_name):
-    return SERVERS_DIR / task_name / 'real_server.py'
+  return SERVERS_DIR / task_name / 'real_server.py'
 
 
 def get_virtual_server(task_name):
-    return SERVERS_DIR / task_name / 'virtual_server.py'
+  return SERVERS_DIR / task_name / 'virtual_server.py'
