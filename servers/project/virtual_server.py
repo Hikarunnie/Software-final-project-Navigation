@@ -12,7 +12,7 @@ from flask import Flask, Response, render_template_string, request, jsonify
 import cv2
 import numpy as np
 
-from servers.templates.introduction import INTRODUCTION_TEMPLATE as HTML_TEMPLATE
+from servers.templates.project import PROJECT_TEMPLATE as HTML_TEMPLATE
 
 from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
@@ -31,7 +31,19 @@ _keys_last_update = time.time()
 current_speeds = {'left': 0.0, 'right': 0.0}
 stop_event = threading.Event()
 student_code_works = True
+maneuver_thread = None
+maneuver_stop = threading.Event()
 
+def start_maneuver(fn, *args):
+    global maneuver_thread, maneuver_stop
+    maneuver_stop.set()
+    if maneuver_thread and maneuver_thread.is_alive():
+        maneuver_thread.join(timeout=1.5)
+    maneuver_stop = threading.Event()
+    maneuver_thread = threading.Thread(
+        target=fn, args=(*args, maneuver_stop), daemon=True
+    )
+    maneuver_thread.start()
 
 def control_loop():
     """Background thread that reads key state and drives wheels at 20Hz."""
@@ -71,6 +83,22 @@ def control_loop():
 
     print("[ControlLoop] Stopped")
 
+
+def dance(distance, stop_ev):
+    print(f"dance for {distance}")
+    duration = float(np.clip(distance, 0.05, 5.0))
+    end_time = time.time() + duration
+    phase = 0
+
+    while not stop_ev.is_set() and time.time() < end_time:
+        if wheels:
+            speed = 0.4 if phase % 2 == 0 else -0.4
+            wheels.set_wheels_speed(speed, -speed)
+        time.sleep(0.25)
+        phase += 1
+
+    if wheels:
+        wheels.set_wheels_speed(0, 0)
 
 def create_visualization(frame):
     """Create camera view with key indicator and speed overlay."""
@@ -222,6 +250,20 @@ def leds_off():
 @app.route('/leds/state')
 def get_led_state():
     return jsonify(_virtual_led_states)
+
+
+@app.route('/maneuver', methods=['POST'])
+def run_maneuver():
+    data = request.json
+    mtype = data.get('type', '')
+    value = float(data.get('value', 0.5))
+
+    if mtype == 'dance':
+        distance = float(np.clip(value, 0.05, 5.0))
+        start_maneuver(dance, distance)
+        return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
+
+    return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
 
 def main():
