@@ -39,6 +39,19 @@ _CONTENT = '''
                 </div>
             </div>
 
+            <div class="card">
+                <div class="card-header">Dance Maneuver</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <input id="danceValue" type="text" placeholder="distance"
+                        value="0.5"
+                        style="padding:6px 8px;background:var(--bg-sidebar);
+                               border:1px solid var(--border-color);border-radius:4px;
+                               color:var(--text-primary);font-size:13px;">
+                    <button class="button" onclick="sendDance()">Dance</button>
+                    <div id="danceStatus" class="status"></div>
+                </div>
+            </div>
+
         </div>
     </div>
 '''
@@ -92,6 +105,13 @@ function sendCommand() {
         .catch(e => showStatus('cmdStatus', 'Error: ' + e, 'error'));
 }
 
+function sendDance() {
+    const value = document.getElementById('danceValue').value.trim() || '0.5';
+    postJSON('/maneuver', {type: 'dance', value})
+        .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
+        .catch(e => showStatus('danceStatus', 'Error: ' + e, 'error'));
+}
+
 document.getElementById('cmdValue').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendCommand();
 });
@@ -109,3 +129,5 @@ def get_template(title='Project', subtitle='Real Duckiebot'):
         extra_css=_EXTRA_CSS,
         extra_js=_EXTRA_JS,
     )
+
+PROJECT_TEMPLATE = get_template()
