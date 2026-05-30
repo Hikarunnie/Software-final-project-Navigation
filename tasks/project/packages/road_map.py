@@ -21,7 +21,6 @@ Usage:
 class RoadMap:
     def __init__(self):
         # Intersections (nodes)
-        # Coordinates only needed with A* since we not use it no need to fill them in
         self.nodes = {
             1: {"id": 1, "x": 0.0, "y": 0.0},
             2: {"id": 2, "x": 0.0, "y": 0.0},
@@ -29,8 +28,6 @@ class RoadMap:
         }
 
         # Roads (edges)
-        # Each road has a unique id, the two intersections it connects, and its length.
-        # Multiple roads can connect the same two intersections.
         self.edges = {
             "1-2-a": {"from": 1, "to": 2, "length": 1},
             "1-2-b": {"from": 1, "to": 2, "length": 4},
@@ -52,9 +49,21 @@ class RoadMap:
                 result.append((edge["from"], edge["length"], edge_id))
         return result
 
+    def all_neighbors_shortest(self, node_id):
+        """
+        Like neighbors() but returns only the shortest road to each neighbor.
+        Use this for Dijkstra — no need to consider longer parallel roads.
+        Returns a list of (neighbor_id, length, edge_id) tuples.
+        """
+        seen = {}
+        for neighbor, length, edge_id in self.neighbors(node_id):
+            if neighbor not in seen or length < seen[neighbor][0]:
+                seen[neighbor] = (length, edge_id)
+        return [(neighbor, length, edge_id) for neighbor, (length, edge_id) in seen.items()]
+
     def edges_between(self, node_a, node_b):
         """
-        Return all edges between node_a and node_b (there may be more than one road).
+        Return all edges between node_a and node_b.
         Returns a list of (edge_id, length) tuples, sorted by length ascending.
         """
         result = []
@@ -102,6 +111,7 @@ if __name__ == "__main__":
     print()
     print("Neighbors of 1:", road_map.neighbors(1))
     print("Neighbors of 2:", road_map.neighbors(2))
+    print("Shortest neighbors of 1:", road_map.all_neighbors_shortest(1))
     print("Roads between 1 and 2:", road_map.edges_between(1, 2))
     print("Roads between 2 and 3:", road_map.edges_between(2, 3))
     print("Shortest 1->2:", road_map.shortest_edge(1, 2))
