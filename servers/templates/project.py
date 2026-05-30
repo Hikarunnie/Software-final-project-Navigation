@@ -20,33 +20,9 @@ _CONTENT = '''
                     </div>
                 </div>
             </div>
-
-            <div class="card">
-                <div class="card-header">Send Command</div>
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                    <div style="display:flex;gap:6px;">
-                        <input id="cmdKey" type="text" placeholder="key"
-                            style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
-                                   border:1px solid var(--border-color);border-radius:4px;
-                                   color:var(--text-primary);font-size:13px;">
-                        <input id="cmdValue" type="text" placeholder="value"
-                            style="flex:2;padding:6px 8px;background:var(--bg-sidebar);
-                                   border:1px solid var(--border-color);border-radius:4px;
-                                   color:var(--text-primary);font-size:13px;">
-                    </div>
-                    <button class="button" onclick="sendCommand()">Send</button>
-                    <div id="cmdStatus" class="status"></div>
-                </div>
-            </div>
-
             <div class="card">
                 <div class="card-header">Dance Maneuver</div>
                 <div style="display:flex;flex-direction:column;gap:8px;">
-                    <input id="danceValue" type="text" placeholder="distance"
-                        value="0.5"
-                        style="padding:6px 8px;background:var(--bg-sidebar);
-                               border:1px solid var(--border-color);border-radius:4px;
-                               color:var(--text-primary);font-size:13px;">
                     <button class="button" onclick="sendDance()">Dance</button>
                     <div id="danceStatus" class="status"></div>
                 </div>
@@ -93,28 +69,11 @@ function refreshStatus() {
         });
 }
 
-function sendCommand() {
-    const key   = document.getElementById('cmdKey').value.trim();
-    const value = document.getElementById('cmdValue').value.trim();
-    if (!key) {
-        showStatus('cmdStatus', 'Key cannot be empty', 'error');
-        return;
-    }
-    postJSON('/command', {key, value})
-        .then(r => showStatus('cmdStatus', r.status === 'ok' ? 'Sent' : r.message, r.status === 'ok' ? 'success' : 'error'))
-        .catch(e => showStatus('cmdStatus', 'Error: ' + e, 'error'));
-}
-
 function sendDance() {
-    const value = document.getElementById('danceValue').value.trim() || '0.5';
-    postJSON('/maneuver', {type: 'dance', value})
+    postJSON('/maneuver', {type: 'dance'})
         .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
         .catch(e => showStatus('danceStatus', 'Error: ' + e, 'error'));
 }
-
-document.getElementById('cmdValue').addEventListener('keydown', e => {
-    if (e.key === 'Enter') sendCommand();
-});
 
 refreshStatus();
 setInterval(refreshStatus, 500);

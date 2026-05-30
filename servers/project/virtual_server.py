@@ -84,7 +84,8 @@ def control_loop():
     print("[ControlLoop] Stopped")
 
 
-def dance(distance, stop_ev):
+def dance(stop_ev):
+    distance = 5.0
     print(f"dance for {distance}")
     duration = float(np.clip(distance, 0.05, 5.0))
     end_time = time.time() + duration
@@ -102,7 +103,7 @@ def dance(distance, stop_ev):
 
 def create_visualization(frame):
     """Create camera view with key indicator and speed overlay."""
-    global current_speeds, keys_pressed, student_code_works
+    global current_speeds, student_code_works
 
     if frame is None:
         placeholder = np.zeros((240, 640, 3), dtype=np.uint8)
@@ -125,33 +126,10 @@ def create_visualization(frame):
     speed_text = f"L: {current_speeds['left']:+.2f}  R: {current_speeds['right']:+.2f}"
     cv2.putText(display, speed_text, (10, display_h - 10), font, 0.6, (0, 255, 0), 2)
 
-    # Draw key indicator in bottom-right
-    with keys_lock:
-        kc = keys_pressed.copy()
-
-    key_size = 30
-    gap = 4
-    base_x = display_w - 3 * (key_size + gap) - 10
-    base_y = display_h - 2 * (key_size + gap) - 10
-
-    key_positions = {
-        'up': (base_x + key_size + gap, base_y),
-        'left': (base_x, base_y + key_size + gap),
-        'down': (base_x + key_size + gap, base_y + key_size + gap),
-        'right': (base_x + 2 * (key_size + gap), base_y + key_size + gap),
-    }
-    key_labels = {'up': '^', 'down': 'v', 'left': '<', 'right': '>'}
-
-    for key, (kx, ky) in key_positions.items():
-        color = (0, 200, 0) if kc.get(key, False) else (60, 60, 60)
-        cv2.rectangle(display, (kx, ky), (kx + key_size, ky + key_size), color, -1)
-        cv2.rectangle(display, (kx, ky), (kx + key_size, ky + key_size), (100, 100, 100), 1)
-        cv2.putText(display, key_labels[key], (kx + 8, ky + 22), font, 0.6, (255, 255, 255), 2)
-
     return display
 
 
-generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=70)
+generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=100)
 
 
 @app.route('/')
@@ -256,12 +234,10 @@ def get_led_state():
 def run_maneuver():
     data = request.json
     mtype = data.get('type', '')
-    value = float(data.get('value', 0.5))
 
     if mtype == 'dance':
-        distance = float(np.clip(value, 0.05, 5.0))
-        start_maneuver(dance, distance)
-        return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
+        start_maneuver(dance)
+        return jsonify({'status': 'ok', 'maneuver': 'dance'})
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
