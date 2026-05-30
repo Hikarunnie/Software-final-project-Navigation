@@ -32,6 +32,8 @@ stop_event = threading.Event()
 student_code_works = True
 maneuver_thread = None
 maneuver_stop = threading.Event()
+current_node = 1
+goal_node = 3
 
 def start_maneuver(fn, *args):
     global maneuver_thread, maneuver_stop
@@ -307,6 +309,34 @@ def run_maneuver():
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
+@app.route('/set_start', methods=['POST'])
+def set_start():
+    global current_node
+    current_node = int(request.json['node'])
+    return jsonify({'status': 'ok', 'node': current_node})
+
+@app.route('/get_start', methods=['GET'])
+def get_start():
+    return jsonify({'node': current_node})
+
+@app.route('/set_goal', methods=['POST'])
+def set_goal():
+    global goal_node
+    goal_node = int(request.json['node'])
+    return jsonify({'status': 'ok', 'node': goal_node})
+
+@app.route('/get_goal', methods=['GET'])
+def get_goal():
+    return jsonify({'node': goal_node})
+
+@app.route('/status')
+def status():
+    return jsonify({
+        'current_node': current_node,
+        'goal_node': goal_node,
+        'left_speed': current_speeds['left'],
+        'right_speed': current_speeds['right'],
+    })
 
 def main():
     global camera, wheels, stop_event
