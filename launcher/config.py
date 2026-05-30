@@ -4,6 +4,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 
 GODOT_DIR = PROJECT_ROOT / 'GodotSimulation' / 'ducky-bot'
+GODOT_MAP_DIR = GODOT_DIR / 'scenes' / 'maps'
 SERVERS_DIR = PROJECT_ROOT / 'servers'
 TASKS_DIR = PROJECT_ROOT / 'tasks'
 DUCKIEBOT_DIR = PROJECT_ROOT / 'duckiebot'
@@ -18,7 +19,7 @@ GODOT_SCENES = {
   'modcon': 'res://scenes/maps/Modconpath.tscn',
   'navigator': 'res://scenes/maps/map_follower.tscn',
   'object_detection': 'res://scenes/maps/lane_detect.tscn',
-  'project': 'res://scenes/maps/introduction.tscn',
+  'project': 'res://scenes/maps/test.tscn',
 }
 
 DEFAULT_WEB_PORT = 5000
