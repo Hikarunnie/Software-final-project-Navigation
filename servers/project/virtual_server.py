@@ -12,8 +12,7 @@ from flask import Flask, Response, render_template_string, request, jsonify
 import cv2
 import numpy as np
 
-from servers.templates.project import PROJECT_TEMPLATE as HTML_TEMPLATE
-
+from servers.templates.project import get_template as HTML_TEMPLATE
 from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
@@ -84,26 +83,69 @@ def control_loop():
     print("[ControlLoop] Stopped")
 
 
-def dance(stop_ev):
-    distance = 5.0
-    print(f"dance for {distance}")
-    duration = float(np.clip(distance, 0.05, 5.0))
-    end_time = time.time() + duration
-    phase = 0
+# LED color sequence for the dance
+_DANCE_COLORS = [
+    [1.0, 0.0, 0.0],  # red
+    [0.0, 1.0, 0.0],  # green
+    [0.0, 0.0, 1.0],  # blue
+    [1.0, 1.0, 0.0],  # yellow
+    [0.0, 1.0, 1.0],  # cyan
+    [1.0, 0.0, 1.0],  # magenta
+]
 
-    while not stop_ev.is_set() and time.time() < end_time:
-        if wheels:
-            speed = 0.4 if phase % 2 == 0 else -0.4
-            wheels.set_wheels_speed(speed, -speed)
-        time.sleep(0.25)
-        phase += 1
+
+def _set_leds(colors_by_index: dict):
+    """Set individual LEDs directly (bypasses HTTP, works in-process)."""
+    for idx, color in colors_by_index.items():
+        if idx in _virtual_led_states:
+            _virtual_led_states[idx] = color
+
+def dance(duration_sec, stop_ev):
+    print(f"[Dance] Starting for {duration_sec:.1f}s")
+    duration = float(np.clip(duration_sec, 0.5, 10.0))
 
     if wheels:
-        wheels.set_wheels_speed(0, 0)
+        wheels.set_wheels_speed(0.8, -0.8)  # turn right
+        time.sleep(0.6)
+        wheels.set_wheels_speed(0.8, 0.8)   # forward
+        time.sleep(1.0)
+        wheels.set_wheels_speed(0.0, 0.0)
+        time.sleep(0.1)
+
+    # Then wiggle
+    end_time = time.time() + duration
+    step = 0
+    led_indices = [0, 2, 3, 4]
+
+    while not stop_ev.is_set() and time.time() < end_time:
+        # Wiggle: alternate spinning left and right
+        if step % 2 == 0:
+            left, right = 0.8, -0.8   # spin left
+        else:
+            left, right = -0.8, 0.8   # spin right
+
+        if wheels:
+            wheels.set_wheels_speed(left, right)
+
+        # Each LED gets a different color from the sequence, rotating each step
+        new_states = {}
+        for i, led_idx in enumerate(led_indices):
+            color_idx = (step + i) % len(_DANCE_COLORS)
+            new_states[led_idx] = _DANCE_COLORS[color_idx]
+        _set_leds(new_states)
+
+        time.sleep(0.1)
+        step += 1
+
+    # Stop wheels and turn off LEDs when done
+    if wheels:
+        wheels.set_wheels_speed(0.0, 0.0)
+    _set_leds({idx: [0, 0, 0] for idx in led_indices})
+    print("[Dance] Done")
 
 def create_visualization(frame):
     """Create camera view with key indicator and speed overlay."""
-    global current_speeds, student_code_works
+    global current_speeds, keys_pressed, student_code_works
 
     if frame is None:
         placeholder = np.zeros((240, 640, 3), dtype=np.uint8)
@@ -126,18 +168,40 @@ def create_visualization(frame):
     speed_text = f"L: {current_speeds['left']:+.2f}  R: {current_speeds['right']:+.2f}"
     cv2.putText(display, speed_text, (10, display_h - 10), font, 0.6, (0, 255, 0), 2)
 
+    # Draw key indicator in bottom-right
+    with keys_lock:
+        kc = keys_pressed.copy()
+
+    key_size = 30
+    gap = 4
+    base_x = display_w - 3 * (key_size + gap) - 10
+    base_y = display_h - 2 * (key_size + gap) - 10
+
+    key_positions = {
+        'up': (base_x + key_size + gap, base_y),
+        'left': (base_x, base_y + key_size + gap),
+        'down': (base_x + key_size + gap, base_y + key_size + gap),
+        'right': (base_x + 2 * (key_size + gap), base_y + key_size + gap),
+    }
+    key_labels = {'up': '^', 'down': 'v', 'left': '<', 'right': '>'}
+
+    for key, (kx, ky) in key_positions.items():
+        color = (0, 200, 0) if kc.get(key, False) else (60, 60, 60)
+        cv2.rectangle(display, (kx, ky), (kx + key_size, ky + key_size), color, -1)
+        cv2.rectangle(display, (kx, ky), (kx + key_size, ky + key_size), (100, 100, 100), 1)
+        cv2.putText(display, key_labels[key], (kx + 8, ky + 22), font, 0.6, (255, 255, 255), 2)
+
     return display
 
 
-generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=100)
+generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=70)
 
 
 @app.route('/')
 def index():
-    return render_template_string(
-        HTML_TEMPLATE,
-        title="Introduction — Keyboard Control",
-        subtitle="Drive your Duckiebot with arrow keys or WASD",
+    return HTML_TEMPLATE(
+        title="Navigation — Project",
+        subtitle="Duckiebot navigation task",
     )
 
 
@@ -234,10 +298,12 @@ def get_led_state():
 def run_maneuver():
     data = request.json
     mtype = data.get('type', '')
+    value = float(data.get('value', 0.5))
 
     if mtype == 'dance':
-        start_maneuver(dance)
-        return jsonify({'status': 'ok', 'maneuver': 'dance'})
+        distance = float(np.clip(value, 3.0, 10.0))
+        start_maneuver(dance, distance)
+        return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
