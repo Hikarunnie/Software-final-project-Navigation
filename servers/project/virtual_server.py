@@ -12,8 +12,7 @@ from flask import Flask, Response, render_template_string, request, jsonify
 import cv2
 import numpy as np
 
-from servers.templates.project import PROJECT_TEMPLATE as HTML_TEMPLATE
-
+from servers.templates.project import get_template as HTML_TEMPLATE
 from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
@@ -104,17 +103,26 @@ def _set_leds(colors_by_index: dict):
 def dance(duration_sec, stop_ev):
     print(f"[Dance] Starting for {duration_sec:.1f}s")
     duration = float(np.clip(duration_sec, 0.5, 10.0))
-    end_time = time.time() + duration
 
+    if wheels:
+        wheels.set_wheels_speed(0.8, -0.8)  # turn right
+        time.sleep(0.6)
+        wheels.set_wheels_speed(0.8, 0.8)   # forward
+        time.sleep(1.0)
+        wheels.set_wheels_speed(0.0, 0.0)
+        time.sleep(0.1)
+
+    # Then wiggle
+    end_time = time.time() + duration
     step = 0
     led_indices = [0, 2, 3, 4]
 
     while not stop_ev.is_set() and time.time() < end_time:
         # Wiggle: alternate spinning left and right
         if step % 2 == 0:
-            left, right = 0.5, -0.5   # spin left
+            left, right = 0.8, -0.8   # spin left
         else:
-            left, right = -0.5, 0.5   # spin right
+            left, right = -0.8, 0.8   # spin right
 
         if wheels:
             wheels.set_wheels_speed(left, right)
@@ -126,7 +134,7 @@ def dance(duration_sec, stop_ev):
             new_states[led_idx] = _DANCE_COLORS[color_idx]
         _set_leds(new_states)
 
-        time.sleep(0.3)
+        time.sleep(0.1)
         step += 1
 
     # Stop wheels and turn off LEDs when done
@@ -191,10 +199,9 @@ generate_frames = make_frame_generator(lambda: camera, create_visualization, qua
 
 @app.route('/')
 def index():
-    return render_template_string(
-        HTML_TEMPLATE,
-        title="Introduction — Keyboard Control",
-        subtitle="Drive your Duckiebot with arrow keys or WASD",
+    return HTML_TEMPLATE(
+        title="Navigation — Project",
+        subtitle="Duckiebot navigation task",
     )
 
 
@@ -294,7 +301,7 @@ def run_maneuver():
     value = float(data.get('value', 0.5))
 
     if mtype == 'dance':
-        distance = float(np.clip(value, 0.05, 5.0))
+        distance = float(np.clip(value, 3.0, 10.0))
         start_maneuver(dance, distance)
         return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
 
