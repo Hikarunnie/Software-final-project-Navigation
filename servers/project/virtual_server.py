@@ -94,6 +94,7 @@ _DANCE_COLORS = [
     [1.0, 0.0, 1.0],  # magenta
 ]
 
+
 def _set_leds(colors_by_index: dict):
     """Set individual LEDs directly (bypasses HTTP, works in-process)."""
     for idx, color in colors_by_index.items():
