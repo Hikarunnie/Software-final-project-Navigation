@@ -16,25 +16,16 @@ Usage:
     # Get a specific edge by id
     road_map.get_edge("1-2-a")
 """
+import godot.utils.map
+import launcher.config
 
 # Important robot always starts at intersection and ends at intersection, so start and endpoints are always nodes
 class RoadMap:
-    def __init__(self):
-        # Intersections (nodes)
-        self.nodes = {
-            1: {"id": 1, "x": 0.0, "y": 0.0},
-            2: {"id": 2, "x": 0.0, "y": 0.0},
-            3: {"id": 3, "x": 0.0, "y": 0.0},
-        }
-
-        # Roads (edges)
-        self.edges = {
-            "1-2-a": {"from": 1, "to": 2, "length": 1},
-            "1-2-b": {"from": 1, "to": 2, "length": 4},
-            "1-3-a": {"from": 1, "to": 3, "length": 3},
-            "2-3-a": {"from": 2, "to": 3, "length": 2},
-            "2-3-b": {"from": 2, "to": 3, "length": 5},
-        }
+    def __init__(self, scene_name=None):
+        if scene_name is None:
+            scene_name = launcher.config.task_name or "project"
+        # Intersections (nodes) and Roads (edges) generated from map
+        self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
 
     def neighbors(self, node_id):
         """

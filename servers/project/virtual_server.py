@@ -3,6 +3,7 @@ import os
 import threading
 import time
 import argparse
+from tasks.project.packages.optimal_path import dijkstra
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
@@ -322,8 +323,32 @@ def get_start():
 @app.route('/set_goal', methods=['POST'])
 def set_goal():
     global goal_node
+
     goal_node = int(request.json['node'])
-    return jsonify({'status': 'ok', 'node': goal_node})
+    route = dijkstra(current_node, goal_node)
+
+    print("\n===================")
+    print("PATH PLANNER")
+    print("===================")
+    print(f"Start: {current_node}")
+    print(f"Goal: {goal_node}")
+    print(f"Path: {route['path']}")
+    print(f"Edges: {route['edges']}")
+    print(f"Distance: {route['distance']}")
+    print("===================\n")
+
+    return jsonify({
+        'status': 'ok',
+        'node': goal_node,
+        'path': route['path'],
+        'distance': route['distance'] if route['path'] else None  # inf breaks JSON
+    })
+@app.route('/route')
+def route():
+    result = dijkstra(current_node, goal_node)
+    if not result['path']:
+        result['distance'] = None 
+    return jsonify(result)
 
 @app.route('/get_goal')
 def get_goal():
