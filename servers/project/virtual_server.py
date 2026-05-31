@@ -8,7 +8,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
 sys.path.insert(0, project_root)
 
-from flask import Flask, Response, render_template_string, request, jsonify
+from flask import Flask, Response, request, jsonify
 import cv2
 import numpy as np
 
@@ -18,7 +18,7 @@ from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
 from launcher.ports import find_available_port
 from servers.common import make_frame_generator, shutdown_cleanup, suppress_http_logs
-from tasks.introduction.packages import manual_drive, led_control
+from tasks.introduction.packages import manual_drive
 
 app = Flask(__name__)
 
@@ -34,6 +34,8 @@ maneuver_thread = None
 maneuver_stop = threading.Event()
 current_node = 1
 goal_node = 3
+_manual_mode = False
+
 
 def start_maneuver(fn, *args):
     global maneuver_thread, maneuver_stop
@@ -46,15 +48,14 @@ def start_maneuver(fn, *args):
     )
     maneuver_thread.start()
 
+
 def control_loop():
-    """Background thread that reads key state and drives wheels at 20Hz."""
     global keys_pressed, current_speeds, student_code_works, _keys_last_update
 
     print("[ControlLoop] Starting...")
 
     while not stop_event.is_set():
         try:
-            # Server-side key timeout: clear keys if no update in 500ms
             if time.time() - _keys_last_update > 0.5:
                 with keys_lock:
                     keys_pressed = {'up': False, 'down': False, 'left': False, 'right': False}
@@ -73,10 +74,10 @@ def control_loop():
             current_speeds['left'] = left
             current_speeds['right'] = right
 
-            if wheels:
+            if _manual_mode and wheels:
                 wheels.set_wheels_speed(left, right)
 
-            time.sleep(0.05)  # 20 Hz
+            time.sleep(0.05)
 
         except Exception as e:
             print(f"[ControlLoop] Error: {e}")
@@ -85,51 +86,47 @@ def control_loop():
     print("[ControlLoop] Stopped")
 
 
-# LED color sequence for the dance
 _DANCE_COLORS = [
-    [1.0, 0.0, 0.0],  # red
-    [0.0, 1.0, 0.0],  # green
-    [0.0, 0.0, 1.0],  # blue
-    [1.0, 1.0, 0.0],  # yellow
-    [0.0, 1.0, 1.0],  # cyan
-    [1.0, 0.0, 1.0],  # magenta
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 1.0, 1.0],
+    [1.0, 0.0, 1.0],
 ]
 
 
 def _set_leds(colors_by_index: dict):
-    """Set individual LEDs directly (bypasses HTTP, works in-process)."""
     for idx, color in colors_by_index.items():
         if idx in _virtual_led_states:
             _virtual_led_states[idx] = color
+
 
 def dance(duration_sec, stop_ev):
     print(f"[Dance] Starting for {duration_sec:.1f}s")
     duration = float(np.clip(duration_sec, 0.5, 10.0))
 
     if wheels:
-        wheels.set_wheels_speed(0.8, -0.8)  # turn right
+        wheels.set_wheels_speed(0.8, -0.8)
         time.sleep(0.6)
-        wheels.set_wheels_speed(0.8, 0.8)   # forward
+        wheels.set_wheels_speed(0.8, 0.8)
         time.sleep(1.0)
         wheels.set_wheels_speed(0.0, 0.0)
         time.sleep(0.1)
 
-    # Then wiggle
     end_time = time.time() + duration
     step = 0
     led_indices = [0, 2, 3, 4]
 
     while not stop_ev.is_set() and time.time() < end_time:
-        # Wiggle: alternate spinning left and right
         if step % 2 == 0:
-            left, right = 0.8, -0.8   # spin left
+            left, right = 0.8, -0.8
         else:
-            left, right = -0.8, 0.8   # spin right
+            left, right = -0.8, 0.8
 
         if wheels:
             wheels.set_wheels_speed(left, right)
 
-        # Each LED gets a different color from the sequence, rotating each step
         new_states = {}
         for i, led_idx in enumerate(led_indices):
             color_idx = (step + i) % len(_DANCE_COLORS)
@@ -139,14 +136,13 @@ def dance(duration_sec, stop_ev):
         time.sleep(0.1)
         step += 1
 
-    # Stop wheels and turn off LEDs when done
     if wheels:
         wheels.set_wheels_speed(0.0, 0.0)
     _set_leds({idx: [0, 0, 0] for idx in led_indices})
     print("[Dance] Done")
 
+
 def create_visualization(frame):
-    """Create camera view with key indicator and speed overlay."""
     global current_speeds, keys_pressed, student_code_works
 
     if frame is None:
@@ -155,22 +151,20 @@ def create_visualization(frame):
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
         return placeholder
 
-    # Convert RGB to BGR for OpenCV
     display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     h, w = display.shape[:2]
-
-    # Scale to reasonable display size
     display_w = 640
     display_h = int(h * display_w / w)
     display = cv2.resize(display, (display_w, display_h))
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-
-    # Draw speed readout at bottom
     speed_text = f"L: {current_speeds['left']:+.2f}  R: {current_speeds['right']:+.2f}"
     cv2.putText(display, speed_text, (10, display_h - 10), font, 0.6, (0, 255, 0), 2)
 
-    # Draw key indicator in bottom-right
+    mode_text = "MANUAL" if _manual_mode else "NAV"
+    color = (0, 255, 0) if _manual_mode else (255, 165, 0)
+    cv2.putText(display, mode_text, (10, 25), font, 0.7, color, 2)
+
     with keys_lock:
         kc = keys_pressed.copy()
 
@@ -235,9 +229,18 @@ def get_speeds():
     return jsonify(current_speeds)
 
 
+@app.route('/set_mode', methods=['POST'])
+def set_mode():
+    global _manual_mode
+    _manual_mode = bool(request.json.get('manual', False))
+    if not _manual_mode and wheels:
+        wheels.set_wheels_speed(0.0, 0.0)
+    print(f"[Mode] {'Manual Drive' if _manual_mode else 'Navigation'}")
+    return jsonify({'status': 'ok', 'manual': _manual_mode})
+
+
 @app.route('/wheels', methods=['POST'])
 def set_wheels():
-    """Directly set wheel speeds. Body: {left: float, right: float}"""
     data = request.json
     left = max(-1.0, min(1.0, float(data.get('left', 0.0))))
     right = max(-1.0, min(1.0, float(data.get('right', 0.0))))
@@ -263,7 +266,6 @@ def snapshot():
     return Response(jpeg.tobytes(), mimetype='image/jpeg')
 
 
-# Stub LED endpoints for API compatibility with real server
 _virtual_led_states = {0: [0,0,0], 2: [0,0,0], 3: [0,0,0], 4: [0,0,0]}
 
 @app.route('/leds', methods=['POST'])
@@ -273,7 +275,6 @@ def set_led():
     color = [max(0.0, min(1.0, float(c))) for c in data.get('color', [0,0,0])]
     if led_index in _virtual_led_states:
         _virtual_led_states[led_index] = color
-    print(f"[VirtualLED] LED {led_index} = {color}")
     return jsonify({'status': 'ok', 'led': led_index, 'color': color})
 
 @app.route('/leds/all', methods=['POST'])
@@ -281,14 +282,12 @@ def set_all_leds():
     color = [max(0.0, min(1.0, float(c))) for c in request.json.get('color', [0,0,0])]
     for idx in (0, 2, 3, 4):
         _virtual_led_states[idx] = color[:]
-    print(f"[VirtualLED] All LEDs = {color}")
     return jsonify({'status': 'ok', 'color': color})
 
 @app.route('/leds/off', methods=['POST'])
 def leds_off():
     for idx in (0, 2, 3, 4):
         _virtual_led_states[idx] = [0, 0, 0]
-    print("[VirtualLED] All LEDs off")
     return jsonify({'status': 'ok'})
 
 @app.route('/leds/state')
@@ -309,13 +308,14 @@ def run_maneuver():
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
+
 @app.route('/set_start', methods=['POST'])
 def set_start():
     global current_node
     current_node = int(request.json['node'])
     return jsonify({'status': 'ok', 'node': current_node})
 
-@app.route('/get_start', methods=['GET'])
+@app.route('/get_start')
 def get_start():
     return jsonify({'node': current_node})
 
@@ -325,7 +325,7 @@ def set_goal():
     goal_node = int(request.json['node'])
     return jsonify({'status': 'ok', 'node': goal_node})
 
-@app.route('/get_goal', methods=['GET'])
+@app.route('/get_goal')
 def get_goal():
     return jsonify({'node': goal_node})
 
@@ -334,23 +334,25 @@ def status():
     return jsonify({
         'current_node': current_node,
         'goal_node': goal_node,
-        'left_speed': current_speeds['left'],
-        'right_speed': current_speeds['right'],
+        'left_speed': round(current_speeds['left'], 2),
+        'right_speed': round(current_speeds['right'], 2),
+        'mode': 'manual' if _manual_mode else 'navigation',
     })
+
 
 def main():
     global camera, wheels, stop_event
 
-    ap = argparse.ArgumentParser(description="Virtual Introduction Server")
-    ap.add_argument("--port", type=int, default=5000, help="Web server port")
-    ap.add_argument("--frame-port", type=int, default=5001, help="Godot camera port")
-    ap.add_argument("--wheel-port", type=int, default=5002, help="Godot wheel port")
-    ap.add_argument("--godot-host", type=str, default="localhost", help="Godot host")
+    ap = argparse.ArgumentParser(description="Navigation Project Server")
+    ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--frame-port", type=int, default=5001)
+    ap.add_argument("--wheel-port", type=int, default=5002)
+    ap.add_argument("--godot-host", type=str, default="localhost")
     args = ap.parse_args()
 
     suppress_http_logs()
     print("=" * 60)
-    print("INTRODUCTION (SIMULATION)")
+    print("NAVIGATION PROJECT (SIMULATION)")
     print("=" * 60)
 
     print("\n[1/2] Initializing wheels driver...")
@@ -366,7 +368,6 @@ def main():
     print(f"  Wheels: {args.godot_host}:{args.wheel_port}")
 
     print("\n[2/2] Initializing camera driver...")
-    print(f"  Waiting for Godot to connect on port {args.frame_port}...")
     camera_cfg = GodotCameraConfig(host="0.0.0.0", port=args.frame_port)
     camera = GodotCameraDriver(godot_config=camera_cfg)
     camera.start()
@@ -382,11 +383,6 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"Web Interface: http://localhost:{web_port}")
-    print("=" * 60)
-    print("\n1. Start Godot simulation")
-    print("2. Open the web interface in your browser")
-    print("3. Use arrow keys or WASD to drive")
-    print("4. Press Ctrl+C to stop")
     print("=" * 60 + "\n")
 
     try:
