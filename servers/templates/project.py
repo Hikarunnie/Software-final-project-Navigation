@@ -22,6 +22,26 @@ _CONTENT = '''
             </div>
 
             <div class="card">
+                <div class="card-header">Mode</div>
+                <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
+                    <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
+                    <label style="position:relative;display:inline-block;width:48px;height:26px;">
+                        <input type="checkbox" id="driveToggle" onchange="toggleMode(this.checked)"
+                            style="opacity:0;width:0;height:0;">
+                        <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+                            background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
+                            transition:.3s;">
+                            <span style="position:absolute;content:'';height:18px;width:18px;left:2px;bottom:2px;
+                                background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
+                                id="toggleKnob"></span>
+                        </span>
+                    </label>
+                    <span style="font-size:13px;color:var(--text-secondary);">Manual Drive</span>
+                </div>
+                <div id="modeStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mode: Navigation</div>
+            </div>
+
+            <div class="card" id="driveCard" style="display:none;">
                 <div class="card-header">Drive</div>
                 <div class="key-display">
                     <div class="key-box key-up"    id="key-up">&#9650;</div>
@@ -114,12 +134,27 @@ _EXTRA_CSS = '''
 '''
 
 _EXTRA_JS = '''
+let manualMode = false;
+
 const keyState = {up: false, down: false, left: false, right: false};
 const keyMap = {
     'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
     'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
     'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
 };
+
+function toggleMode(isManual) {
+    manualMode = isManual;
+    document.getElementById('driveCard').style.display = isManual ? 'block' : 'none';
+    document.getElementById('modeStatus').textContent = 'Mode: ' + (isManual ? 'Manual Drive' : 'Navigation');
+    document.getElementById('toggleKnob').style.left = isManual ? '26px' : '2px';
+    document.getElementById('toggleSlider').style.background = isManual ? 'rgba(63,185,80,0.3)' : 'var(--bg-sidebar)';
+    document.getElementById('toggleSlider').style.borderColor = isManual ? 'var(--accent-green)' : 'var(--border-color)';
+    document.getElementById('toggleKnob').style.background = isManual ? 'var(--accent-green)' : 'var(--text-muted)';
+
+    postJSON('/set_mode', {manual: isManual}).catch(() => {});
+    if (!isManual) releaseAll();
+}
 
 function updateKeyDisplay() {
     for (const [key, active] of Object.entries(keyState)) {
@@ -129,6 +164,7 @@ function updateKeyDisplay() {
 }
 
 function sendKeys() {
+    if (!manualMode) return;
     fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
         .catch(() => {});
 }
@@ -136,19 +172,22 @@ function sendKeys() {
 function releaseAll() {
     Object.keys(keyState).forEach(k => keyState[k] = false);
     updateKeyDisplay();
-    sendKeys();
+    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
+        .catch(() => {});
 }
 
 document.addEventListener('keydown', e => {
+    if (!manualMode) return;
     const dir = keyMap[e.key];
     if (dir && !keyState[dir]) { e.preventDefault(); keyState[dir] = true; updateKeyDisplay(); sendKeys(); }
 });
 document.addEventListener('keyup', e => {
+    if (!manualMode) return;
     const dir = keyMap[e.key];
     if (dir) { e.preventDefault(); keyState[dir] = false; updateKeyDisplay(); sendKeys(); }
 });
 window.addEventListener('blur', releaseAll);
-setInterval(() => { if (Object.values(keyState).some(Boolean)) sendKeys(); }, 150);
+setInterval(() => { if (manualMode && Object.values(keyState).some(Boolean)) sendKeys(); }, 150);
 
 function refreshStatus() {
     fetch('/status')
