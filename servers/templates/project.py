@@ -22,6 +22,17 @@ _CONTENT = '''
             </div>
 
             <div class="card">
+                <div class="card-header">Drive</div>
+                <div class="key-display">
+                    <div class="key-box key-up"    id="key-up">&#9650;</div>
+                    <div class="key-box key-left"  id="key-left">&#9664;</div>
+                    <div class="key-box key-down"  id="key-down">&#9660;</div>
+                    <div class="key-box key-right" id="key-right">&#9654;</div>
+                </div>
+                <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
+            </div>
+
+            <div class="card">
                 <div class="card-header">Start Node</div>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <select id="startNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
@@ -72,9 +83,73 @@ _EXTRA_CSS = '''
 #statusTable .row:last-child { border-bottom: none; }
 #statusTable .key  { color: var(--text-secondary); font-size: 12px; }
 #statusTable .val  { color: var(--text-primary);   font-weight: 500; font-size: 13px; font-family: monospace; }
+
+.key-display {
+    display: grid;
+    grid-template-areas: ".    up   ." "left down right";
+    grid-template-columns: repeat(3, 48px);
+    grid-template-rows: repeat(2, 48px);
+    gap: 4px;
+    justify-content: center;
+    margin: 8px 0;
+}
+.key-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-sidebar);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.1s;
+    user-select: none;
+}
+.key-box.active { background: rgba(63,185,80,0.2); border-color: var(--accent-green); color: var(--accent-green); }
+.key-up    { grid-area: up; }
+.key-down  { grid-area: down; }
+.key-left  { grid-area: left; }
+.key-right { grid-area: right; }
 '''
 
 _EXTRA_JS = '''
+const keyState = {up: false, down: false, left: false, right: false};
+const keyMap = {
+    'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
+    'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
+    'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
+};
+
+function updateKeyDisplay() {
+    for (const [key, active] of Object.entries(keyState)) {
+        const el = document.getElementById('key-' + key);
+        if (el) el.classList.toggle('active', active);
+    }
+}
+
+function sendKeys() {
+    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
+        .catch(() => {});
+}
+
+function releaseAll() {
+    Object.keys(keyState).forEach(k => keyState[k] = false);
+    updateKeyDisplay();
+    sendKeys();
+}
+
+document.addEventListener('keydown', e => {
+    const dir = keyMap[e.key];
+    if (dir && !keyState[dir]) { e.preventDefault(); keyState[dir] = true; updateKeyDisplay(); sendKeys(); }
+});
+document.addEventListener('keyup', e => {
+    const dir = keyMap[e.key];
+    if (dir) { e.preventDefault(); keyState[dir] = false; updateKeyDisplay(); sendKeys(); }
+});
+window.addEventListener('blur', releaseAll);
+setInterval(() => { if (Object.values(keyState).some(Boolean)) sendKeys(); }, 150);
+
 function refreshStatus() {
     fetch('/status')
         .then(r => r.json())
@@ -99,7 +174,7 @@ function refreshStatus() {
 }
 
 function sendDance() {
-    postJSON('/maneuver', {type: 'dance'})
+    postJSON('/maneuver', {type: 'dance', value: 3.0})
         .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
         .catch(e => showStatus('danceStatus', 'Error: ' + e, 'error'));
 }
@@ -120,11 +195,11 @@ function setGoalNode() {
 
 fetch('/get_start').then(r => r.json()).then(d => {
     document.getElementById('startNode').value = d.node;
-});
+}).catch(() => {});
 
 fetch('/get_goal').then(r => r.json()).then(d => {
     document.getElementById('goalNode').value = d.node;
-});
+}).catch(() => {});
 
 refreshStatus();
 setInterval(refreshStatus, 500);
