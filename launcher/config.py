@@ -27,6 +27,9 @@ DEFAULT_DEPLOY_PORT = 8000
 DEFAULT_CAMERA_PORT = 5001
 DEFAULT_WHEEL_PORT = 5002
 
+# Global task name - set by launch.py when a task is started
+task_name = None
+
 
 def get_task_scene(task_name):
   return GODOT_SCENES.get(task_name, f'res://scenes/{task_name}.tscn')
