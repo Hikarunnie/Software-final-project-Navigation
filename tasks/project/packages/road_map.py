@@ -1,37 +1,55 @@
-"""
-road_map.py — Duckietown road network map
-
-Represents the road network as a weighted undirected graph.
-Nodes = intersections, Edges = roads between them with lengths.
-
-Usage:
-    from road_map import road_map
-
-    # Get all neighbors of intersection 1 (returns list of (neighbor, length, edge_id))
-    road_map.neighbors(1)
-
-    # Get all edges between two intersections
-    road_map.edges_between(2, 3)
-
-    # Get a specific edge by id
-    road_map.get_edge("1-2-a")
-"""
 import godot.utils.map
-import launcher.config
 
-# Important robot always starts at intersection and ends at intersection, so start and endpoints are always nodes
+
 class RoadMap:
-    def __init__(self, scene_name=None):
-        if scene_name is None:
-            scene_name = launcher.config.task_name or "project"
-        # Intersections (nodes) and Roads (edges) generated from map
-        self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
+    """
+    Weighted undirected graph representing the Duckietown road network.
+    Nodes = intersections (curve/cross tiles), Edges = roads between them.
+    In simulation: loaded from the Godot scene file.
+    On real robot: falls back to hardcoded map matching the physical track.
+    """
+
+    def __init__(self, scene_name="test1_actual_map_kiu"):
+        try:
+            self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
+            print(f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)")
+        except Exception as e:
+            print(f"[RoadMap] Could not load scene '{scene_name}': {e}")
+            print("[RoadMap] Using hardcoded fallback map")
+            self.nodes = {
+                1:  {"id": 1,  "x": 0.9, "y": 2.1},
+                2:  {"id": 2,  "x": 2.7, "y": 2.1},
+                3:  {"id": 3,  "x": 2.7, "y": 3.3},
+                4:  {"id": 4,  "x": 2.1, "y": 3.3},
+                5:  {"id": 5,  "x": 0.9, "y": 4.5},
+                6:  {"id": 6,  "x": 2.1, "y": 4.5},
+                7:  {"id": 7,  "x": 0.9, "y": 6.9},
+                8:  {"id": 8,  "x": 2.1, "y": 6.9},
+                9:  {"id": 9,  "x": 4.5, "y": 4.5},
+                10: {"id": 10, "x": 4.5, "y": 2.7},
+                11: {"id": 11, "x": 5.1, "y": 2.7},
+                12: {"id": 12, "x": 5.1, "y": 2.1},
+            }
+            self.edges = {
+                "1-2-a":   {"from": 1,  "to": 2,  "length": 3},
+                "1-5-a":   {"from": 1,  "to": 5,  "length": 4},
+                "2-12-a":  {"from": 2,  "to": 12, "length": 4},
+                "2-3-a":   {"from": 2,  "to": 3,  "length": 2},
+                "3-4-a":   {"from": 3,  "to": 4,  "length": 1},
+                "4-6-a":   {"from": 4,  "to": 6,  "length": 2},
+                "5-6-a":   {"from": 5,  "to": 6,  "length": 2},
+                "5-7-a":   {"from": 5,  "to": 7,  "length": 4},
+                "6-9-a":   {"from": 6,  "to": 9,  "length": 4},
+                "6-8-a":   {"from": 6,  "to": 8,  "length": 4},
+                "7-8-a":   {"from": 7,  "to": 8,  "length": 2},
+                "9-10-a":  {"from": 9,  "to": 10, "length": 3},
+                "10-11-a": {"from": 10, "to": 11, "length": 1},
+                "10-12-a": {"from": 10, "to": 12, "length": 2},
+                "11-12-a": {"from": 11, "to": 12, "length": 1},
+            }
 
     def neighbors(self, node_id):
-        """
-        Return all roads reachable from node_id.
-        Returns a list of (neighbor_id, length, edge_id) tuples.
-        """
+        """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""
         result = []
         for edge_id, edge in self.edges.items():
             if edge["from"] == node_id:
@@ -43,8 +61,7 @@ class RoadMap:
     def all_neighbors_shortest(self, node_id):
         """
         Like neighbors() but returns only the shortest road to each neighbor.
-        Use this for Dijkstra — no need to consider longer parallel roads.
-        Returns a list of (neighbor_id, length, edge_id) tuples.
+        Use this for Dijkstra — ignores longer parallel roads to the same node.
         """
         seen = {}
         for neighbor, length, edge_id in self.neighbors(node_id):
@@ -53,10 +70,7 @@ class RoadMap:
         return [(neighbor, length, edge_id) for neighbor, (length, edge_id) in seen.items()]
 
     def edges_between(self, node_a, node_b):
-        """
-        Return all edges between node_a and node_b.
-        Returns a list of (edge_id, length) tuples, sorted by length ascending.
-        """
+        """Return all edges between node_a and node_b, sorted by length ascending."""
         result = []
         for edge_id, edge in self.edges.items():
             if (edge["from"] == node_a and edge["to"] == node_b) or \
@@ -65,19 +79,16 @@ class RoadMap:
         return sorted(result, key=lambda x: x[1])
 
     def shortest_edge(self, node_a, node_b):
-        """
-        Return the shortest road between node_a and node_b.
-        Returns (edge_id, length) or None if no road exists.
-        """
+        """Return the shortest (edge_id, length) between two nodes, or None if no road exists."""
         edges = self.edges_between(node_a, node_b)
         return edges[0] if edges else None
 
     def get_node(self, node_id):
-        """Return node data dict for node_id."""
+        """Return node data dict {id, x, y} for node_id."""
         return self.nodes.get(node_id)
 
     def get_edge(self, edge_id):
-        """Return edge data dict for edge_id."""
+        """Return edge data dict {from, to, length} for edge_id."""
         return self.edges.get(edge_id)
 
     def all_nodes(self):
@@ -89,20 +100,5 @@ class RoadMap:
         return list(self.edges.keys())
 
 
-# Singleton — import this in your pathfinding and navigation code
+# Singleton needed to import this in pathfinding and navigation code
 road_map = RoadMap()
-
-
-# Quick sanity check when run directly
-if __name__ == "__main__":
-    print("Nodes:", road_map.all_nodes())
-    print("Edges:")
-    for eid, e in road_map.edges.items():
-        print(f"  {eid}: {e['from']} <-> {e['to']}, length={e['length']}")
-    print()
-    print("Neighbors of 1:", road_map.neighbors(1))
-    print("Neighbors of 2:", road_map.neighbors(2))
-    print("Shortest neighbors of 1:", road_map.all_neighbors_shortest(1))
-    print("Roads between 1 and 2:", road_map.edges_between(1, 2))
-    print("Roads between 2 and 3:", road_map.edges_between(2, 3))
-    print("Shortest 1->2:", road_map.shortest_edge(1, 2))
