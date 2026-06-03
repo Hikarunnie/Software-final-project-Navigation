@@ -57,9 +57,6 @@ _CONTENT = '''
                 <div style="display:flex;gap:8px;align-items:center;">
                     <select id="startNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
                            border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Node 1</option>
-                        <option value="2">Node 2</option>
-                        <option value="3">Node 3</option>
                     </select>
                     <button class="button" onclick="setStartNode()">Set</button>
                 </div>
@@ -71,9 +68,6 @@ _CONTENT = '''
                 <div style="display:flex;gap:8px;align-items:center;">
                     <select id="goalNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
                            border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Node 1</option>
-                        <option value="2">Node 2</option>
-                        <option value="3">Node 3</option>
                     </select>
                     <button class="button" onclick="setGoalNode()">Set</button>
                 </div>
@@ -85,6 +79,15 @@ _CONTENT = '''
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <button class="button" onclick="sendDance()">Dance</button>
                     <div id="danceStatus" class="status"></div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">Navigation</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button class="button" onclick="startNavigation()">Navigate</button>
+                    <button class="button" style="background:var(--accent-red);border-color:var(--accent-red);" onclick="stopNavigation()">Stop</button>
+                    <div id="navStatus" class="status"></div>
                 </div>
             </div>
 
@@ -151,7 +154,6 @@ function toggleMode(isManual) {
     document.getElementById('toggleSlider').style.background = isManual ? 'rgba(63,185,80,0.3)' : 'var(--bg-sidebar)';
     document.getElementById('toggleSlider').style.borderColor = isManual ? 'var(--accent-green)' : 'var(--border-color)';
     document.getElementById('toggleKnob').style.background = isManual ? 'var(--accent-green)' : 'var(--text-muted)';
-
     postJSON('/set_mode', {manual: isManual}).catch(() => {});
     if (!isManual) releaseAll();
 }
@@ -231,13 +233,29 @@ function setGoalNode() {
         .then(r => showStatus('goalStatus', 'End node set to ' + r.node, 'success'))
         .catch(e => showStatus('goalStatus', 'Error: ' + e, 'error'));
 }
+function startNavigation() {
+    postJSON('/navigate', {})
+        .then(r => showStatus('navStatus', r.status === 'ok' ? 'Navigating: ' + r.path.join(' → ') : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
+        .catch(e => showStatus('navStatus', 'Error: ' + e, 'error'));
+}
 
-fetch('/get_start').then(r => r.json()).then(d => {
-    document.getElementById('startNode').value = d.node;
-}).catch(() => {});
+function stopNavigation() {
+    postJSON('/navigate/stop', {})
+        .then(r => showStatus('navStatus', 'Stopped', 'success'))
+        .catch(e => showStatus('navStatus', 'Error: ' + e, 'error'));
+}
 
-fetch('/get_goal').then(r => r.json()).then(d => {
-    document.getElementById('goalNode').value = d.node;
+// Load nodes dynamically from server and populate dropdowns
+fetch('/get_nodes').then(r => r.json()).then(d => {
+    const options = d.nodes.map(n => `<option value="${n}">Node ${n}</option>`).join('');
+    document.getElementById('startNode').innerHTML = options;
+    document.getElementById('goalNode').innerHTML = options;
+    fetch('/get_start').then(r => r.json()).then(d => {
+        document.getElementById('startNode').value = d.node;
+    }).catch(() => {});
+    fetch('/get_goal').then(r => r.json()).then(d => {
+        document.getElementById('goalNode').value = d.node;
+    }).catch(() => {});
 }).catch(() => {});
 
 refreshStatus();

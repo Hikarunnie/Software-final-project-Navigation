@@ -354,6 +354,54 @@ def route():
 def get_goal():
     return jsonify({'node': goal_node})
 
+@app.route('/get_nodes')
+def get_nodes():
+    from tasks.project.packages.road_map import road_map
+    return jsonify({'nodes': road_map.all_nodes()})
+
+navigation_thread = None
+navigation_stop = threading.Event()
+
+def _run_navigation(stop_ev):
+    from tasks.project.packages.agent import main as nav_main
+    nav_main(camera, wheels, None, stop_ev)
+
+@app.route('/navigate', methods=['POST'])
+def navigate():
+    global navigation_thread, navigation_stop
+    # Stop any running navigation first
+    navigation_stop.set()
+    if navigation_thread and navigation_thread.is_alive():
+        navigation_thread.join(timeout=2.0)
+
+    # Compute path to show in response
+    from tasks.project.packages.optimal_path import dijkstra
+    try:
+        route = dijkstra(current_node, goal_node)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+    if not route['path']:
+        return jsonify({'status': 'error', 'message': 'No path found'}), 400
+
+    # Start navigation in background thread
+    navigation_stop = threading.Event()
+    navigation_thread = threading.Thread(
+        target=_run_navigation, args=(navigation_stop,), daemon=True
+    )
+    navigation_thread.start()
+
+    return jsonify({'status': 'ok', 'path': route['path'], 'distance': route['distance']})
+
+
+@app.route('/navigate/stop', methods=['POST'])
+def navigate_stop():
+    global navigation_stop
+    navigation_stop.set()
+    if wheels:
+        wheels.set_wheels_speed(0.0, 0.0)
+    return jsonify({'status': 'ok'})
+
 @app.route('/status')
 def status():
     return jsonify({
@@ -362,8 +410,8 @@ def status():
         'left_speed': round(current_speeds['left'], 2),
         'right_speed': round(current_speeds['right'], 2),
         'mode': 'manual' if _manual_mode else 'navigation',
+        'navigating': navigation_thread is not None and navigation_thread.is_alive(),
     })
-
 
 def main():
     global camera, wheels, stop_event
