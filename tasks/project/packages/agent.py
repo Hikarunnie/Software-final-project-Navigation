@@ -481,6 +481,7 @@ class NavigationAgent:
         self._red_window: deque = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames    = 0
         self.last_state         = None
+        self._route_initialized = False
         _reset_heading()
 
     # ------------------------------------------------------------------
@@ -570,18 +571,7 @@ class NavigationAgent:
 
         # ── DRIVING ────────────────────────────────────────────────────────────
         if self.state == "driving":
-            if current_node == goal_node:
-                wheels.set_wheels_speed(0.0, 0.0)
-                self._transition("completed")
-                return False
 
-            # Refresh route if needed
-            if (self.current_route is None
-                    or self.current_route.get('start') != current_node):
-                self.current_route = self._get_route(current_node, goal_node)
-                if self.current_route is None:
-                    wheels.set_wheels_speed(0.0, 0.0)
-                    return True
 
             # Lane-follow
             left, right = lane_follower.compute_commands(frame_bgr)
@@ -590,13 +580,11 @@ class NavigationAgent:
             armed = self._driving_frames >= RED_ARM_FRAMES
 
             if not armed:
-                # Not yet armed — drive at full lane-follow speed
                 wheels.set_wheels_speed(left, right)
             else:
                 red_detected, red_mask = detect_red_line(frame_bgr)
-                confirmed              = self._red_vote(red_detected)
+                confirmed = self._red_vote(red_detected)
 
-                # Progressive slowdown: decelerate as vote fraction rises
                 vote_fraction = sum(self._red_window) / max(len(self._red_window), 1)
                 if vote_fraction > 0.3:
                     speed_scale = max(0.0, 1.0 - vote_fraction)
@@ -605,17 +593,27 @@ class NavigationAgent:
                     wheels.set_wheels_speed(left, right)
 
                 if confirmed:
-                    print("[Agent] Red line CONFIRMED — entering intersection")
                     wheels.set_wheels_speed(0.0, 0.0)
                     self._red_window.clear()
+                    self._driving_frames = 0
 
-                    # Decide turn direction and launch the FSM
+                    if not self._route_initialized:
+                        print(f"[Agent] First red line — initializing at node {current_node}")
+                        server.current_node = current_node
+                        self.current_route = self._get_route(current_node, goal_node)
+                        self._route_initialized = True
+
+                    # Check if we've physically arrived at the goal
+                    if current_node == goal_node:
+                        self._transition("completed")
+                        return False
+
+                    print("[Agent] Red line CONFIRMED — entering intersection")
                     route_path = self.current_route.get('path', [])
-                    direction  = get_direction_from_route(current_node, goal_node, route_path)
+                    direction = get_direction_from_route(current_node, goal_node, route_path)
                     intersection_fsm.start(direction)
                     self._transition("crossing")
 
-        # ── Build debug frame ──────────────────────────────────────────────────
         if frame_bgr is not None:
             debug_frame = build_debug_frame(
                 raw_bgr     = frame_bgr,

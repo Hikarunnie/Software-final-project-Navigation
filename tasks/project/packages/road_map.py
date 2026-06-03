@@ -83,3 +83,7 @@ class RoadMap:
 
 # Singleton needed to import this in pathfinding and navigation code
 road_map = RoadMap()
+
+
+if __name__ == "__main__":
+    print("Dijkstra 1 -> 3:", road_map.get_edge('1-3-b'))
