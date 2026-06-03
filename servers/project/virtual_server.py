@@ -4,6 +4,7 @@ import threading
 import time
 import argparse
 from tasks.project.packages.optimal_path import dijkstra
+import tasks.project.packages.agent as agent
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
@@ -18,7 +19,7 @@ from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
 from launcher.ports import find_available_port
-from servers.common import make_frame_generator, shutdown_cleanup, suppress_http_logs
+from servers.common import shutdown_cleanup, suppress_http_logs
 from tasks.introduction.packages import manual_drive
 
 app = Flask(__name__)
@@ -36,6 +37,8 @@ maneuver_stop = threading.Event()
 current_node = 1
 goal_node = 3
 _manual_mode = False
+_navigation_thread = None
+_navigation_stop = threading.Event()
 
 
 def start_maneuver(fn, *args):
@@ -85,6 +88,42 @@ def control_loop():
             time.sleep(0.1)
 
     print("[ControlLoop] Stopped")
+
+
+def start_navigation():
+    """Start the autonomous navigation thread."""
+    global _navigation_thread, _navigation_stop
+    
+    if _navigation_thread and _navigation_thread.is_alive():
+        print("[Navigation] Already running")
+        return
+    
+    print("[Navigation] Starting navigation loop...")
+    _navigation_stop.clear()
+    _navigation_thread = threading.Thread(
+        target=agent.main,
+        args=(camera, wheels, None, _navigation_stop),
+        daemon=True,
+        name='NavigationThread'
+    )
+    _navigation_thread.start()
+
+
+def stop_navigation():
+    """Stop the autonomous navigation thread."""
+    global _navigation_thread, _navigation_stop
+    
+    if not _navigation_thread or not _navigation_thread.is_alive():
+        print("[Navigation] Not running")
+        return
+    
+    print("[Navigation] Stopping navigation loop...")
+    _navigation_stop.set()
+    _navigation_thread.join(timeout=2.0)
+    if _navigation_thread.is_alive():
+        print("[Navigation] Warning: Navigation thread still alive after timeout")
+    else:
+        print("[Navigation] Navigation stopped")
 
 
 _DANCE_COLORS = [
@@ -152,7 +191,7 @@ def create_visualization(frame):
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
         return placeholder
 
-    display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    display = frame.copy()
     h, w = display.shape[:2]
     display_w = 640
     display_h = int(h * display_w / w)
@@ -191,7 +230,39 @@ def create_visualization(frame):
     return display
 
 
-generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=70)
+def generate_frames():
+    """
+    MJPEG generator for /video.
+    - Nav mode:    serves agent.debug_frame (already BGR, annotated with masks).
+    - Manual mode: reads raw camera and runs create_visualization as before.
+    """
+    while True:
+        try:
+            # ── Autonomous nav: use the pre-built debug frame ─────────────────
+            if not _manual_mode and agent.debug_frame is not None:
+                display = agent.debug_frame
+            else:
+                # ── Manual / fallback: read camera and annotate ───────────────
+                if camera is None:
+                    display = None
+                else:
+                    ok, raw_rgb = camera.read_rgb()
+                    raw_bgr = cv2.cvtColor(raw_rgb, cv2.COLOR_RGB2BGR) if (ok and raw_rgb is not None) else None
+                    display = create_visualization(raw_bgr)
+
+            if display is None:
+                placeholder = np.zeros((240, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, "Waiting for Godot...", (200, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
+                display = placeholder
+
+            ret, jpeg = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ret:
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                       + jpeg.tobytes() + b'\r\n')
+        except Exception as e:
+            print(f"[VideoStream] Error: {e}")
+        time.sleep(0.033)   # ~30 fps
 
 
 @app.route('/')
@@ -236,7 +307,14 @@ def set_mode():
     _manual_mode = bool(request.json.get('manual', False))
     if not _manual_mode and wheels:
         wheels.set_wheels_speed(0.0, 0.0)
-    print(f"[Mode] {'Manual Drive' if _manual_mode else 'Navigation'}")
+    
+    if _manual_mode:
+        print(f"[Mode] Manual Drive - stopping navigation")
+        stop_navigation()
+    else:
+        print(f"[Mode] Autonomous Navigation - starting agent")
+        start_navigation()
+    
     return jsonify({'status': 'ok', 'manual': _manual_mode})
 
 
