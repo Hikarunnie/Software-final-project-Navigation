@@ -359,7 +359,7 @@ def get_direction_from_route(current_node: int, goal_node: int, route_path: list
             print(f"[Direction] heading-aware {current_node}→{next_node} "
                   f"heading={_heading} delta=({dx:+.2f},{dy:+.2f}) "
                   f"fwd={forward_comp:+.2f} lat={lateral_comp:+.2f} → '{d}'")
-            return "left"
+            return d
     except Exception as e:
         print(f"[Direction] coord fallback error: {e}")
 
