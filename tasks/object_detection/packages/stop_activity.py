@@ -4,92 +4,50 @@ Detection = Tuple[Tuple[int, int, int, int], float, int]
 
 class_names = {0: 'duckie', 1: 'truck', 2: 'sign'}
 
-LANE_FOLLOWING = 'LANE_FOLLOWING'
-OBSTACLE_PRESENT = 'OBSTACLE_PRESENT'
-DECELERATING = 'DECELERATING'
-
-_state = LANE_FOLLOWING
-_decel_frame = 0
-_clear_count = 0
-_stop_reason = ''
-
-
-def _get_best_detection(detections: List[Detection], img_size: int):
-    best = None
-    best_bottom = -1
-    for bbox, score, cls_id in detections:
-        _, _, _, y2 = bbox
-        if y2 > best_bottom:
-            best_bottom = y2
-            best = (bbox, score, cls_id)
-    return best
-
-
-def _is_in_opposing_lane(bbox, img_size) -> bool:
-    x1, _, x2, _ = bbox
-    cx = (x1 + x2) / 2
-    lane_center = img_size * 0.35
-    if cx < lane_center:
-        return True
-    return False
+STOP_MEMORY = 0
+CLEAR_FRAMES = 0
 
 
 def should_stop(detections: List[Detection], img_size: int) -> Tuple[bool, str]:
-    global _state, _decel_frame, _clear_count, _stop_reason
+    global STOP_MEMORY, CLEAR_FRAMES
 
-    RELEASE_FRAMES = 5
-    STOP_Y = 0.55
-    WARN_Y = 0.40
+    found = None
 
-    filtered = [d for d in detections if not _is_in_opposing_lane(d[0], img_size)]
+    if detections is None:
+        detections = []
 
-    if _state == LANE_FOLLOWING:
-        if not filtered:
-            return False, ''
+    for bbox, score, class_id in detections:
+        xmin, ymin, xmax, ymax = bbox
 
-        best = _get_best_detection(filtered, img_size)
-        _, _, _, y2 = best[0]
-        cls_id = best[2]
+        if class_id not in [0, 1, 2]:
+            continue
 
-        if y2 > STOP_Y * img_size:
-            _state = OBSTACLE_PRESENT
-            _stop_reason = f'{class_names.get(cls_id, str(cls_id))}_ahead'
-            return True, _stop_reason
+        if score < 0.40:
+            continue
 
-        if y2 > WARN_Y * img_size:
-            _state = DECELERATING
-            _decel_frame = 0
-            _stop_reason = f'slowing_for_{class_names.get(cls_id, str(cls_id))}'
-            return False, _stop_reason
+        box_height = ymax - ymin
+        bottom_x = (xmin + xmax) / 2
+        bottom_y = ymax
 
-        return False, ''
+        in_front = img_size * 0.25 < bottom_x < img_size * 0.75
+        close = bottom_y > img_size * 0.45
+        big_enough = box_height > img_size * 0.06
 
-    elif _state == DECELERATING:
-        if not filtered:
-            _state = LANE_FOLLOWING
-            return False, ''
+        if in_front and close and big_enough:
+            found = class_id
+            break
 
-        _decel_frame += 1
-        best = _get_best_detection(filtered, img_size)
-        _, _, _, y2 = best[0]
-        cls_id = best[2]
+    if found is not None:
+        STOP_MEMORY = 35
+        CLEAR_FRAMES = 0
+        return True, f"Stopping for {class_names.get(found, found)}"
 
-        if y2 > STOP_Y * img_size or _decel_frame > 7:
-            _state = OBSTACLE_PRESENT
-            _stop_reason = f'{class_names.get(cls_id, str(cls_id))}_ahead'
-            return True, _stop_reason
+    if STOP_MEMORY > 0:
+        STOP_MEMORY -= 1
+        return True, "Keeping stop briefly"
 
-        return False, _stop_reason
+    CLEAR_FRAMES += 1
+    if CLEAR_FRAMES < 15:
+        return True, "Waiting until road is clear"
 
-    else:
-        if not filtered:
-            _clear_count += 1
-            if _clear_count >= RELEASE_FRAMES:
-                _state = LANE_FOLLOWING
-                _clear_count = 0
-                return False, ''
-            return True, _stop_reason
-
-        _clear_count = 0
-        return True, _stop_reason
-
+    return False, ""
