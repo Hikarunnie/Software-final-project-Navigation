@@ -363,7 +363,10 @@ def status():
         'right_speed': round(current_speeds['right'], 2),
         'mode': 'manual' if _manual_mode else 'navigation',
     })
-
+@app.route('/get_nodes')
+def get_nodes():
+    from tasks.project.packages.road_map import road_map
+    return jsonify({'nodes': road_map.all_nodes()})
 
 def main():
     global camera, wheels, stop_event
