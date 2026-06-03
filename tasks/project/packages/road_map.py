@@ -17,35 +17,16 @@ class RoadMap:
             print(f"[RoadMap] Could not load scene '{scene_name}': {e}")
             print("[RoadMap] Using hardcoded fallback map")
             self.nodes = {
-                1:  {"id": 1,  "x": 0.9, "y": 2.1},
-                2:  {"id": 2,  "x": 2.7, "y": 2.1},
-                3:  {"id": 3,  "x": 2.7, "y": 3.3},
-                4:  {"id": 4,  "x": 2.1, "y": 3.3},
-                5:  {"id": 5,  "x": 0.9, "y": 4.5},
-                6:  {"id": 6,  "x": 2.1, "y": 4.5},
-                7:  {"id": 7,  "x": 0.9, "y": 6.9},
-                8:  {"id": 8,  "x": 2.1, "y": 6.9},
-                9:  {"id": 9,  "x": 4.5, "y": 4.5},
-                10: {"id": 10, "x": 4.5, "y": 2.7},
-                11: {"id": 11, "x": 5.1, "y": 2.7},
-                12: {"id": 12, "x": 5.1, "y": 2.1},
+                1: {"id": 1, "x": 2.7, "y": 2.1},
+                2: {"id": 2, "x": 0.9, "y": 4.5},
+                3: {"id": 3, "x": 2.1, "y": 4.5},
             }
             self.edges = {
-                "1-2-a":   {"from": 1,  "to": 2,  "length": 3},
-                "1-5-a":   {"from": 1,  "to": 5,  "length": 4},
-                "2-12-a":  {"from": 2,  "to": 12, "length": 4},
-                "2-3-a":   {"from": 2,  "to": 3,  "length": 2},
-                "3-4-a":   {"from": 3,  "to": 4,  "length": 1},
-                "4-6-a":   {"from": 4,  "to": 6,  "length": 2},
-                "5-6-a":   {"from": 5,  "to": 6,  "length": 2},
-                "5-7-a":   {"from": 5,  "to": 7,  "length": 4},
-                "6-9-a":   {"from": 6,  "to": 9,  "length": 4},
-                "6-8-a":   {"from": 6,  "to": 8,  "length": 4},
-                "7-8-a":   {"from": 7,  "to": 8,  "length": 2},
-                "9-10-a":  {"from": 9,  "to": 10, "length": 3},
-                "10-11-a": {"from": 10, "to": 11, "length": 1},
-                "10-12-a": {"from": 10, "to": 12, "length": 2},
-                "11-12-a": {"from": 11, "to": 12, "length": 1},
+                "1-3-a": {"from": 1, "to": 3, "length": 13},
+                "1-2-a": {"from": 1, "to": 2, "length": 7},
+                "1-3-b": {"from": 1, "to": 3, "length": 5},
+                "2-3-a": {"from": 2, "to": 3, "length": 2},
+                "2-3-b": {"from": 2, "to": 3, "length": 10},
             }
 
     def neighbors(self, node_id):
