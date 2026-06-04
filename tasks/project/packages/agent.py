@@ -171,104 +171,230 @@ def detect_red_line(image: np.ndarray) -> tuple:
 # LANE FOLLOWING CONTROLLER
 # ============================================================================
 
+# ============================================================================
+# LANE FOLLOWING CONTROLLER  (ported from LaneServoingAgent)
+# ============================================================================
+
 class LaneFollowingController:
-    """PD controller for lane-centre following."""
+    """
+    PD controller for lane-centre following.
+    Logic ported from LaneServoingAgent; interface kept compatible with the
+    rest of navigation_agent.py (reset_error, compute_commands, last_mask_*,
+    last_error).
+    """
+
+    # Slice-based detection constants (mirrors LaneServoingAgent)
+    _ROI_START   = 0.47
+    _NUM_SLICES  = 3
+    _SLICE_TOL   = 5
+    _LINE_OFFSET = 160          # initial lane half-width estimate (px)
 
     def __init__(self):
-        self.p_gain           = 0.12
-        self.d_gain           = 0.10
-        self.max_steer        = 0.40
-        self.base_speed       = 0.10
-        self.prev_error       = 0.0
-        self._lane_half_width = 160.0
-        self.last_mask_white = None
+        # --- PD / speed gains (mirrors lane_servoing_config defaults) ---
+        self.p_gain              = 0.10
+        self.d_gain              = 0.35
+        self.max_steer           = 0.40
+        self.base_speed          = 0.10    # kept low to match original nav agent
+        self.curve_speed         = 0.10
+        self.curve_threshold     = 350     # px spread to call a curve
+        self.steering_threshold  = 0.20
+        self.curve_boost         = 1.30
+        self.detection_threshold = 500     # min total pixels before recovery
+
+        # --- state ---
+        self._prev_error        = 0.0
+        self._filtered_error    = 0.0
+        self._lane_half_width   = float(self._LINE_OFFSET)
+        self._left_history      = deque(maxlen=3)
+        self._right_history     = deque(maxlen=3)
+
+        # --- public attributes read by NavigationAgent / debug ---
+        self.last_mask_white  = None
         self.last_mask_yellow = None
         self.last_error: float = 0.0
 
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
     def reset_error(self):
-        self.prev_error = 0.0
-        self.last_error = 0.0
+        self._prev_error     = 0.0
+        self._filtered_error = 0.0
+        self.last_error      = 0.0
+        self._left_history.clear()
+        self._right_history.clear()
 
     def compute_commands(self, image: np.ndarray) -> tuple:
+        """
+        image : BGR uint8 ndarray (same contract as the rest of navigation_agent.py)
+        returns (left_speed, right_speed)
+        """
         if image is None:
             return 0.0, 0.0
 
-        h, w = image.shape[:2]
-
+        # --- lane-marking detection (expects BGR, same as original) ---
         try:
             mask_yellow, mask_white = detect_lane_markings(image)
-            self.last_mask_white  = mask_white
             self.last_mask_yellow = mask_yellow
+            self.last_mask_white  = mask_white
         except Exception as e:
             print(f"[LaneFollowing] detect_lane_markings error: {e}")
-            self.last_mask_white  = None
             self.last_mask_yellow = None
+            self.last_mask_white  = None
             return 0.0, 0.0
 
-        yellow_pixels = np.where(mask_yellow > 0)
-        white_pixels  = np.where(mask_white  > 0)
+        mask_y = _mask_to_uint8(mask_yellow)
+        mask_w = _mask_to_uint8(mask_white)
 
-        has_yellow = len(yellow_pixels[1]) > 0
-        has_white  = len(white_pixels[1])  > 0
+        yellow_pixels = int(np.count_nonzero(mask_y))
+        white_pixels  = int(np.count_nonzero(mask_w))
+        total_pixels  = yellow_pixels + white_pixels
 
-        # Sanity-check: white must be meaningfully to the RIGHT of yellow.
-        # Chevrons/arrows sit at or left of the yellow line in the problem
-        # corner, so this one check kills the bad detection without touching
-        # detect_lane_markings at all.
-        if has_yellow and has_white:
-            white_mean_x  = np.mean(white_pixels[1])
-            yellow_mean_x = np.mean(yellow_pixels[1])
-            white_span_x  = int(white_pixels[1].max() - white_pixels[1].min())
-            yellow_count  = len(yellow_pixels[1])
-            white_count   = len(white_pixels[1])
-            apex_x        = int(white_pixels[1].min())
+        left_det  = yellow_pixels > 0
+        right_det = white_pixels  > 0
+        recovery  = total_pixels < self.detection_threshold
 
-            # Dynamic threshold — tighter when yellow is sparse (bot drifting)
-            # scales from 1.3x at low yellow up to 2.5x at abundant yellow
-            dynamic_ratio_threshold = min(1.3 + (yellow_count / 2000.0), 1.8)
-            ratio_bad    = white_count > yellow_count * dynamic_ratio_threshold
-            span_bad     = white_span_x > w * 0.25   # tightened from 0.40 to 0.25
-            position_bad = white_mean_x < yellow_mean_x + (w * 0.15)
-            apex_bad = int(white_pixels[1].min()) > w * 0.55
+        h, w = mask_y.shape
+        yellow_xs, white_xs = self._detect_lines_in_slices(mask_y, mask_w, h)
+        both_visible        = left_det and right_det and not recovery
 
-            if ratio_bad or span_bad or position_bad or apex_bad:
-                has_white = False
+        is_curve, _ = self._detect_curve(yellow_xs, white_xs)
 
-        error = self.prev_error
+        raw_error            = self._calculate_error(
+            yellow_xs, white_xs, left_det, right_det, w
+        )
+        self._filtered_error = 0.7 * self._filtered_error + 0.3 * raw_error
+        steering             = self._calculate_steering(self._filtered_error)
 
-        if has_yellow and has_white:
-            lane_center = (np.mean(yellow_pixels[1]) + np.mean(white_pixels[1])) / 2.0
-            error       = (w / 2.0 - lane_center) / (w / 2.0)
-        elif has_yellow:
-            yellow_x = np.mean(yellow_pixels[1])
-            yellow_y = np.mean(yellow_pixels[0])  # vertical centre of mass
+        self.last_error = float(np.clip(self._prev_error, -1.0, 1.0))
 
-            # Scale half-width by how low in the frame yellow is.
-            # Bottom of frame (y=480) → full 160px offset
-            # Top of ROI (y=192, i.e. 0.4*480) → reduced to ~60px offset
-            # This prevents overcorrection when yellow is far away and high up.
-            y_scale = (yellow_y - h * 0.4) / (h * 0.6)
-            y_scale = float(np.clip(y_scale, 0.0, 1.0))
-            scaled_half_width = 60.0 + y_scale * 100.0  # ranges 60→160px
-
-            error = (w / 2.0 - (yellow_x + scaled_half_width)) / (w / 2.0)
-        elif has_white:
-            white_x = np.mean(white_pixels[1])
-            error   = (w / 2.0 - (white_x - self._lane_half_width)) / (w / 2.0)
-
-        error           = float(np.clip(error, -1.0, 1.0))
-        self.last_error = error
-        error_diff      = error - self.prev_error
-        self.prev_error = error
-
-        steering = float(np.clip(
-            self.p_gain * error + self.d_gain * error_diff,
-            -self.max_steer, self.max_steer,
-        ))
-
-        left  = float(np.clip(self.base_speed - steering, -0.4, 0.4))
-        right = float(np.clip(self.base_speed + steering, -0.4, 0.4))
+        left, right = self._motor_commands(steering, recovery, is_curve, both_visible)
+        left, right = self._smooth(left, right, both_visible)
         return left, right
+
+    # ------------------------------------------------------------------
+    # Internal helpers  (ported 1-to-1 from LaneServoingAgent)
+    # ------------------------------------------------------------------
+
+    def _detect_lines_in_slices(
+        self,
+        mask_y: np.ndarray,
+        mask_w: np.ndarray,
+        h: int,
+    ) -> tuple:
+        """Return (yellow_xs, white_xs) — mean x per horizontal slice."""
+        slice_height = int(h * 0.35 / self._NUM_SLICES)
+        start_y      = int(h * self._ROI_START)
+        yellow_xs, white_xs = [], []
+
+        for i in range(self._NUM_SLICES):
+            y = start_y + i * slice_height + slice_height // 2
+            tol = self._SLICE_TOL
+
+            strip_y = mask_y[max(y - tol, 0): y + tol, :]
+            idx = np.where(strip_y > 0)[1]
+            if len(idx):
+                yellow_xs.append(int(np.mean(idx)))
+
+            strip_w = mask_w[max(y - tol, 0): y + tol, :]
+            idx = np.where(strip_w > 0)[1]
+            if len(idx):
+                white_xs.append(int(np.mean(idx)))
+
+        return yellow_xs, white_xs
+
+    def _detect_curve(self, yellow_xs: list, white_xs: list) -> tuple:
+        """
+        Lightweight curve detector — checks x-spread within each lane list.
+        Returns (is_curve: bool, direction: str | None).
+        Mirrors the role of detect_curve() from curve_behavior without
+        importing that module.
+        """
+        def _spread(xs):
+            return (max(xs) - min(xs)) if len(xs) >= 2 else 0
+
+        spread = max(_spread(yellow_xs), _spread(white_xs))
+        if spread < self.curve_threshold:
+            return False, None
+
+        # Direction: if yellow trends right across slices → right curve
+        if len(yellow_xs) >= 2:
+            direction = "right" if yellow_xs[-1] > yellow_xs[0] else "left"
+        elif len(white_xs) >= 2:
+            direction = "right" if white_xs[-1] > white_xs[0] else "left"
+        else:
+            direction = None
+
+        return True, direction
+
+    def _calculate_error(
+        self,
+        yellow_xs: list,
+        white_xs: list,
+        left_det: bool,
+        right_det: bool,
+        w: int,
+    ) -> float:
+        if left_det and right_det and yellow_xs and white_xs:
+            y_mean   = float(np.mean(yellow_xs))
+            w_mean   = float(np.mean(white_xs))
+            measured = (w_mean - y_mean) / 2.0
+            if measured > 20:
+                self._lane_half_width = (
+                    0.9 * self._lane_half_width + 0.1 * measured
+                )
+            error = w / 2.0 - (y_mean + w_mean) / 2.0
+        elif left_det and yellow_xs:
+            error = w / 2.0 - (float(np.mean(yellow_xs)) + self._lane_half_width)
+        elif right_det and white_xs:
+            error = w / 2.0 - (float(np.mean(white_xs)) - self._lane_half_width)
+        else:
+            error = self._prev_error
+
+        return float(np.clip(error / (w / 2.0), -1.0, 1.0))
+
+    def _calculate_steering(self, error: float) -> float:
+        error_diff       = error - self._prev_error
+        self._prev_error = error
+        steering         = self.p_gain * error + self.d_gain * error_diff
+        return float(np.clip(steering, -self.max_steer, self.max_steer))
+
+    def _motor_commands(
+        self,
+        steering: float,
+        recovery: bool,
+        is_curve: bool,
+        both_visible: bool,
+    ) -> tuple:
+        if recovery:
+            return 0.0, 0.0
+
+        speed = self.curve_speed if is_curve else self.base_speed
+        if not both_visible:
+            speed *= 0.8
+
+        left  = speed - steering
+        right = speed + steering
+
+        if is_curve and abs(steering) > self.steering_threshold:
+            if steering > 0:
+                right *= 5
+            else:
+                left *= self.curve_boost
+
+        return float(np.clip(left, -0.4, 0.4)), float(np.clip(right, -0.4, 0.4))
+
+    def _smooth(self, left: float, right: float, both_visible: bool) -> tuple:
+        buf = 2 if both_visible else 1
+        if self._left_history.maxlen != buf:
+            self._left_history  = deque(maxlen=buf)
+            self._right_history = deque(maxlen=buf)
+        self._left_history.append(left)
+        self._right_history.append(right)
+        return (
+            sum(self._left_history)  / len(self._left_history),
+            sum(self._right_history) / len(self._right_history),
+        )
 
 
 lane_follower = LaneFollowingController()

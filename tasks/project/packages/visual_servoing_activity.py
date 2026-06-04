@@ -17,38 +17,33 @@ _yellow_upper = np.array([_h.get('yellow_upper_h', 0),  _h.get('yellow_upper_s',
 _white_lower = np.array([_h.get('white_lower_h', 0),   _h.get('white_lower_s', 0), _h.get('white_lower_v', 0)])
 _white_upper = np.array([_h.get('white_upper_h', 0), _h.get('white_upper_s', 0), _h.get('white_upper_v', 0)])
 
+_SIGMA = 4.5
+_MAG_THRESHOLD = 40.0
+
+
 def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    # Crop the top half (horizon) — only look at the road
     h, w = image.shape[:2]
+    crop_top = int(h * 0.4)
+    roi = image[crop_top:, :]
 
-    imghsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Blur to reduce noise
+    blurred = cv2.GaussianBlur(roi, (5, 5), 2)
 
-    img_blur = cv2.GaussianBlur(img_gray, (0, 0), 2)
+    # Convert to HSV
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-    sobelx = cv2.Sobel(img_blur, cv2.CV_64F, 1, 0)
-    sobely = cv2.Sobel(img_blur, cv2.CV_64F, 0, 1)
-    Gmag = np.sqrt(sobelx ** 2 + sobely ** 2)
+    # Color masks
+    yellow_mask = cv2.inRange(hsv, _yellow_lower, _yellow_upper)
+    white_mask  = cv2.inRange(hsv, _white_lower, _white_upper)
 
-    mask_mag = (Gmag > 50).astype(np.uint8)
+    # Put masks back into full-size images
+    full_yellow = np.zeros((h, w), dtype=np.uint8)
+    full_white  = np.zeros((h, w), dtype=np.uint8)
+    full_yellow[crop_top:, :] = yellow_mask
+    full_white[crop_top:, :]  = white_mask
 
-    mask_yellow_color = cv2.inRange(imghsv, _yellow_lower, _yellow_upper)
-    mask_white_color  = cv2.inRange(imghsv, _white_lower,  _white_upper)
-
-    # ignore sky / upper portion of image
-    mask_horizon = np.zeros((h, w), dtype=np.uint8)
-    mask_horizon[int(h * 0.4):, :] = 1
-
-    # yellow = yellow color + edge + horizon (no half restriction so detection survives drifts)
-    mask_yellow = (mask_horizon * mask_mag
-                   * (mask_yellow_color > 0)).astype(float)
-
-    # white = white color + edge + horizon, exclude far-left strip
-    mask_white_area = np.ones((h, w), dtype=np.uint8)
-    mask_white_area[:, : w // 4] = 0
-    mask_white = (mask_horizon * mask_white_area * mask_mag
-                  * (mask_white_color > 0)).astype(float)
-
-    return mask_yellow, mask_white
+    return (full_yellow // 255).astype(np.uint8), (full_white // 255).astype(np.uint8)
 
 
 def set_hsv_bounds(yellow_lower, yellow_upper, white_lower, white_upper):
@@ -57,6 +52,7 @@ def set_hsv_bounds(yellow_lower, yellow_upper, white_lower, white_upper):
     _yellow_upper = np.array(yellow_upper)
     _white_lower  = np.array(white_lower)
     _white_upper  = np.array(white_upper)
+
 
 def get_hsv_bounds():
     return {
