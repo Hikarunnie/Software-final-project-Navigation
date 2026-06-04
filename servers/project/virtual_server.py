@@ -38,7 +38,7 @@ maneuver_thread = None
 maneuver_stop = threading.Event()
 current_node = 1
 goal_node = 3
-_manual_mode = False
+_manual_mode = True
 _navigation_thread = None
 _navigation_stop = threading.Event()
 
@@ -108,9 +108,10 @@ def start_navigation():
 
     print("[Navigation] Starting navigation loop...")
     _navigation_stop.clear()
+    import servers.project.virtual_server as _self
     _navigation_thread = threading.Thread(
         target=agent.main,
-        args=(camera, wheels, None, _navigation_stop),
+        args=(camera, wheels, None, _navigation_stop, _self),
         daemon=True,
         name='NavigationThread'
     )
@@ -525,6 +526,10 @@ def main():
     print("=" * 60 + "\n")
 
     try:
+        _manual_mode = True
+        if wheels:
+            wheels.set_wheels_speed(0.0, 0.0)
+        print("[Mode] Starting in Manual mode")
         app.run(host='127.0.0.1', port=web_port, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\n\nShutting down...")

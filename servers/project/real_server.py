@@ -30,7 +30,7 @@ stop_event = threading.Event()
 
 current_node = 1
 goal_node    = 3
-_manual_mode = False
+_manual_mode = True
 _navigation_thread = None
 _navigation_stop   = threading.Event()
 keys_pressed = {'up': False, 'down': False, 'left': False, 'right': False}
@@ -133,9 +133,10 @@ def start_navigation():
 
     print("[Navigation] Starting navigation loop...")
     _navigation_stop.clear()
+    import servers.project.real_server as _self
     _navigation_thread = threading.Thread(
         target=agent.main,
-        args=(camera, wheels, leds, _navigation_stop),
+        args=(camera, wheels, leds, _navigation_stop, _self),
         daemon=True,
         name='NavigationThread'
     )
@@ -246,12 +247,12 @@ def get_start():
 
 @app.route('/get_hsv')
 def get_hsv():
-    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds
+    from tasks.project.packages.visual_servoing_activity import get_hsv_bounds
     return jsonify(get_hsv_bounds())
 
 @app.route('/update_hsv', methods=['POST'])
 def update_hsv():
-    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds, set_hsv_bounds
+    from tasks.project.packages.visual_servoing_activity import get_hsv_bounds, set_hsv_bounds
     data = request.json
     current = get_hsv_bounds()
     current.update({k: int(v) for k, v in data.items() if k in current})
@@ -367,6 +368,10 @@ def main():
     print('Press Ctrl+C to stop\n')
 
     try:
+        _manual_mode = True
+        if wheels:
+            wheels.set_wheels_speed(0.0, 0.0)
+        print("[Mode] Starting in Manual mode")
         app.run(host='0.0.0.0', port=web_port, debug=False, threaded=True)
     except (KeyboardInterrupt, SystemExit):
         pass

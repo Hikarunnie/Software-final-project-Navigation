@@ -117,15 +117,6 @@ _CONTENT = '''
                     </div>
                 </div>
             </div>
-            
-            <div class="card">
-    <div class="card-header">HSV Calibration</div>
-    <div style="font-size:12px;color:#f1c40f;font-weight:600;margin-bottom:8px;">YELLOW LINE</div>
-    <div id="hsv-sliders-yellow"></div>
-    <div style="font-size:12px;color:#ecf0f1;font-weight:600;margin:12px 0 8px;">WHITE LINE</div>
-    <div id="hsv-sliders-white"></div>
-    <div id="hsv-status" class="status"></div>
-</div>
 
             <div class="card">
                 <div class="card-header">Mode</div>
@@ -137,7 +128,7 @@ _CONTENT = '''
                         <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
                             background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
                             transition:.3s;">
-                            <span style="position:absolute;content:'';height:18px;width:18px;left:2px;bottom:2px;
+                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
                                 background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
                                 id="toggleKnob"></span>
                         </span>
@@ -243,19 +234,10 @@ _EXTRA_CSS = '''
 '''
 
 _EXTRA_JS = '''
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 let manualMode = false;
 
-const keyState = {up: false, down: false, left: false, right: false};
-const keyMap = {
-    'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
-    'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
-    'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
-};
-const hsvKeys = {
-    yellow: ['yellow_lower_h','yellow_upper_h','yellow_lower_s','yellow_upper_s','yellow_lower_v','yellow_upper_v'],
-    white:  ['white_lower_h', 'white_upper_h', 'white_lower_s', 'white_upper_s', 'white_lower_v', 'white_upper_v'],
-};
-const hsvRanges = {h: 179, s: 255, v: 255};
 function postJSON(url, data) {
     return fetch(url, {
         method: 'POST',
@@ -271,63 +253,68 @@ function showStatus(id, msg, type) {
     el.style.color = type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)';
     setTimeout(() => { el.textContent = ''; }, 3000);
 }
-function buildHsvSliders() {
-    ['yellow','white'].forEach(color => {
-        const container = document.getElementById('hsv-sliders-' + color);
-        hsvKeys[color].forEach(key => {
-            const label = key.replace(color + '_', '').replace('_', ' ').toUpperCase();
-            const letter = key.slice(-1);
-            const max = hsvRanges[letter] || 255;
-            
-            const wrapper = document.createElement('div');
-            wrapper.style.marginBottom = '6px';
-            
-            const labelRow = document.createElement('div');
-            labelRow.style.cssText = 'display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);';
-            labelRow.innerHTML = '<span>' + label + '</span><span id="' + key + '-val">0</span>';
-            
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.id = key;
-            slider.min = 0;
-            slider.max = max;
-            slider.value = 0;
-            slider.style.width = '100%';
-            slider.addEventListener('input', function() {
-                document.getElementById(key + '-val').textContent = this.value;
-                console.log('Slider moved:', key, this.value);
-                sendHsv(key, this.value);
-            });
-            
-            wrapper.appendChild(labelRow);
-            wrapper.appendChild(slider);
-            container.appendChild(wrapper);
-        });
-    });
+
+// Set a slider + its paired number input to value v
+function setSliderValue(sliderId, v) {
+    const slider = document.getElementById(sliderId);
+    const input  = document.getElementById(sliderId + '-input');
+    if (slider) slider.value = v;
+    if (input)  input.value  = v;
 }
 
-function sendHsv(key, val) {
-    const payload = {};
-    payload[key] = parseInt(val);
-    postJSON('/update_hsv', payload)
-        .then(r => {
-            console.log('HSV update response:', r);
-            showStatus('hsv-status', 'Updated', 'success');
-        })
-        .catch(e => {
-            console.log('HSV update error:', e);
-            showStatus('hsv-status', 'Error', 'error');
+// Wire up a slider + its number input so they stay in sync, then call onChange
+function syncSliderInput(sliderId, onChange) {
+    const slider = document.getElementById(sliderId);
+    const input  = document.getElementById(sliderId + '-input');
+    if (!slider) return;
+    slider.addEventListener('input', function () {
+        if (input) input.value = this.value;
+        onChange();
+    });
+    if (input) {
+        input.addEventListener('change', function () {
+            if (slider) slider.value = this.value;
+            onChange();
         });
+    }
 }
 
-buildHsvSliders();
+// ── HSV sliders ───────────────────────────────────────────────────────────────
 
-fetch('/get_hsv').then(r => r.json()).then(d => {
-    Object.entries(d).forEach(([k, v]) => {
-        const el = document.getElementById(k);
-        if (el) { el.value = v; document.getElementById(k + '-val').textContent = v; }
+// Map from slider DOM id → server key name
+const HSV_SLIDER_MAP = {
+    'yLowH':  'yellow_lower_h', 'yHighH': 'yellow_upper_h',
+    'yLowS':  'yellow_lower_s', 'yHighS': 'yellow_upper_s',
+    'yLowV':  'yellow_lower_v', 'yHighV': 'yellow_upper_v',
+    'wLowH':  'white_lower_h',  'wHighH': 'white_upper_h',
+    'wLowS':  'white_lower_s',  'wHighS': 'white_upper_s',
+    'wLowV':  'white_lower_v',  'wHighV': 'white_upper_v',
+};
+
+// Wire all HSV sliders
+Object.entries(HSV_SLIDER_MAP).forEach(([sliderId, serverKey]) => {
+    syncSliderInput(sliderId, () => {
+        const val = parseInt(document.getElementById(sliderId).value);
+        const payload = {};
+        payload[serverKey] = val;
+        postJSON('/update_hsv', payload)
+            .then(() => showStatus('hsv-status', 'HSV Updated!', 'success'))
+            .catch(() => showStatus('hsv-status', 'Error', 'error'));
     });
-}).catch(() => {});
+});
+
+// Load current HSV values from server once on page load
+fetch('/get_hsv')
+    .then(r => r.json())
+    .then(d => {
+        Object.entries(HSV_SLIDER_MAP).forEach(([sliderId, serverKey]) => {
+            if (d[serverKey] !== undefined) setSliderValue(sliderId, d[serverKey]);
+        });
+    })
+    .catch(() => {});
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+
 function toggleMode(isManual) {
     manualMode = isManual;
     document.getElementById('driveCard').style.display = isManual ? 'block' : 'none';
@@ -337,9 +324,20 @@ function toggleMode(isManual) {
     document.getElementById('toggleSlider').style.borderColor = isManual ? 'var(--accent-green)' : 'var(--border-color)';
     document.getElementById('toggleKnob').style.background = isManual ? 'var(--accent-green)' : 'var(--text-muted)';
 
-    postJSON('/set_mode', {manual: isManual}).catch(() => {});
+    postJSON('/set_mode', {manual: isManual})
+        .catch(() => showStatus('modeStatus', 'Server error', 'error'));
+
     if (!isManual) releaseAll();
 }
+
+// ── Keyboard drive ────────────────────────────────────────────────────────────
+
+const keyState = {up: false, down: false, left: false, right: false};
+const keyMap = {
+    'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
+    'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
+    'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
+};
 
 function updateKeyDisplay() {
     for (const [key, active] of Object.entries(keyState)) {
@@ -350,15 +348,21 @@ function updateKeyDisplay() {
 
 function sendKeys() {
     if (!manualMode) return;
-    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
-        .catch(() => {});
+    fetch('/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(keyState)
+    }).catch(() => {});
 }
 
 function releaseAll() {
     Object.keys(keyState).forEach(k => keyState[k] = false);
     updateKeyDisplay();
-    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
-        .catch(() => {});
+    fetch('/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(keyState)
+    }).catch(() => {});
 }
 
 document.addEventListener('keydown', e => {
@@ -374,6 +378,8 @@ document.addEventListener('keyup', e => {
 window.addEventListener('blur', releaseAll);
 setInterval(() => { if (manualMode && Object.values(keyState).some(Boolean)) sendKeys(); }, 150);
 
+// ── Status polling ────────────────────────────────────────────────────────────
+
 function refreshStatus() {
     fetch('/status')
         .then(r => r.json())
@@ -381,7 +387,7 @@ function refreshStatus() {
             const table = document.getElementById('statusTable');
             const keys = Object.keys(data);
             if (keys.length === 0) {
-                table.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px 0;">get_ui_data() returned {}</div>';
+                table.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px 0;">No data</div>';
                 return;
             }
             table.innerHTML = keys.map(k =>
@@ -397,26 +403,30 @@ function refreshStatus() {
         });
 }
 
-function sendDance() {
-    postJSON('/maneuver', {type: 'dance', value: 3.0})
-        .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
-        .catch(e => showStatus('danceStatus', 'Error: ' + e, 'error'));
-}
+refreshStatus();
+setInterval(refreshStatus, 500);
+
+// ── Node controls ─────────────────────────────────────────────────────────────
 
 function setStartNode() {
     const node = parseInt(document.getElementById('startNode').value);
     postJSON('/set_start', {node})
-        .then(r => showStatus('startStatus', 'Start node set to ' + r.node, 'success'))
-        .catch(e => showStatus('startStatus', 'Error: ' + e, 'error'));
+        .then(r => showStatus('startStatus', 'Start set to ' + r.node, 'success'))
+        .catch(() => showStatus('startStatus', 'Error', 'error'));
 }
 
 function setGoalNode() {
     const node = parseInt(document.getElementById('goalNode').value);
     postJSON('/set_goal', {node})
-        .then(r => showStatus('goalStatus', 'End node set to ' + r.node, 'success'))
-        .catch(e => showStatus('goalStatus', 'Error: ' + e, 'error'));
+        .then(r => {
+            let msg = 'Goal set to ' + r.node;
+            if (r.path) msg += '  Path: ' + r.path.join(' → ');
+            showStatus('goalStatus', msg, 'success');
+        })
+        .catch(() => showStatus('goalStatus', 'Error', 'error'));
 }
 
+// Pre-fill selects from server
 fetch('/get_start').then(r => r.json()).then(d => {
     document.getElementById('startNode').value = d.node;
 }).catch(() => {});
@@ -425,44 +435,13 @@ fetch('/get_goal').then(r => r.json()).then(d => {
     document.getElementById('goalNode').value = d.node;
 }).catch(() => {});
 
-// Load HSV bounds from server on page load
-fetch('/get_hsv')
-    .then(r => r.json())
-    .then(d => {
-        setSliderValue('yLowH',  d.yellow_lower_h);
-        setSliderValue('yHighH', d.yellow_upper_h);
-        setSliderValue('yLowS',  d.yellow_lower_s);
-        setSliderValue('yHighS', d.yellow_upper_s);
-        setSliderValue('yLowV',  d.yellow_lower_v);
-        setSliderValue('yHighV', d.yellow_upper_v);
-        setSliderValue('wLowH',  d.white_lower_h);
-        setSliderValue('wHighH', d.white_upper_h);
-        setSliderValue('wLowS',  d.white_lower_s);
-        setSliderValue('wHighS', d.white_upper_s);
-        setSliderValue('wLowV',  d.white_lower_v);
-        setSliderValue('wHighV', d.white_upper_v);
-    });
+// ── Dance ─────────────────────────────────────────────────────────────────────
 
-const hsvKeys = {
-    'yLowH':  'yellow_lower_h', 'yHighH': 'yellow_upper_h',
-    'yLowS':  'yellow_lower_s', 'yHighS': 'yellow_upper_s',
-    'yLowV':  'yellow_lower_v', 'yHighV': 'yellow_upper_v',
-    'wLowH':  'white_lower_h',  'wHighH': 'white_upper_h',
-    'wLowS':  'white_lower_s',  'wHighS': 'white_upper_s',
-    'wLowV':  'white_lower_v',  'wHighV': 'white_upper_v',
-};
-
-Object.entries(hsvKeys).forEach(([sliderId, key]) => {
-    syncSliderInput(sliderId, () => {
-        const payload = {};
-        payload[key] = parseInt(document.getElementById(sliderId).value);
-        postJSON('/update_hsv', payload)
-            .then(() => showStatus('hsv-status', 'HSV Updated!', 'success'));
-    });
-});
-
-refreshStatus();
-setInterval(refreshStatus, 500);
+function sendDance() {
+    postJSON('/maneuver', {type: 'dance', value: 3.0})
+        .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started!' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
+        .catch(() => showStatus('danceStatus', 'Error', 'error'));
+}
 '''
 
 
