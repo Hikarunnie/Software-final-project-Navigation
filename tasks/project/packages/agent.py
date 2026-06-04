@@ -470,6 +470,11 @@ class NavigationAgent:
         # ── COMPLETED ─────────────────────────────────────────────────────────
         if self.state == "completed":
             wheels.set_wheels_speed(0.0, 0.0)
+            self._transition("celebrating")
+            return True
+
+        if self.state == "celebrating":
+            wheels.set_wheels_speed(0.0, 0.0)
             return False
 
         # ── CROSSING ──────────────────────────────────────────────────────────
@@ -593,9 +598,39 @@ def main(camera, wheels, leds, stop_event, server_module=None):
             )
 
             if not should_continue:
-                print("[Agent] Route complete — stopping")
+                print("[Agent] Route complete — waiting then dancing")
                 if wheels:
                     wheels.set_wheels_speed(0.0, 0.0)
+                time.sleep(2.0)
+                # Dance
+                end_time = time.time() + 4.0
+                step = 0
+                dance_colors = [
+                    [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
+                    [1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0],
+                ]
+                while time.time() < end_time and not stop_event.is_set():
+                    if step % 2 == 0:
+                        l, r = 0.8, -0.8
+                    else:
+                        l, r = -0.8, 0.8
+                    if wheels:
+                        wheels.set_wheels_speed(l, r)
+                    if leds:
+                        try:
+                            leds.set_led(0, dance_colors[step % len(dance_colors)])
+                        except Exception:
+                            pass
+                    time.sleep(0.1)
+                    step += 1
+                if wheels:
+                    wheels.set_wheels_speed(0.0, 0.0)
+                if leds:
+                    try:
+                        leds.all_off()
+                    except Exception:
+                        pass
+                print("[Agent] Dance done — stopping")
                 break
 
             time.sleep(0.02)   # 50 Hz
