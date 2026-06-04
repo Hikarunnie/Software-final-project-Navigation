@@ -7,7 +7,16 @@ from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
 from tasks.project.packages.visual_servoing_activity import detect_lane_markings
 
-# Import whichever server module is running (real or virtual).
+# Object detection
+try:
+    from tasks.object_detection.packages.agent import ObjectDetectionAgent
+    from tasks.object_detection.packages.stop_activity import should_stop
+    _DETECTION_AVAILABLE = True
+except ImportError as e:
+    print(f"[Agent] Object detection not available: {e}")
+    _DETECTION_AVAILABLE = False
+
+# Server module — injected by main()
 server = None
 
 
@@ -34,6 +43,9 @@ TURN_TIMES = {
 RED_WINDOW_SIZE  = 12
 RED_VOTE_THRESH  = 0.65
 RED_ARM_FRAMES   = 32
+
+CLASS_NAMES  = {0: 'duckie', 1: 'truck', 2: 'sign'}
+CLASS_COLORS = {0: (0, 215, 255), 1: (180, 100, 220), 2: (50, 205, 50)}
 
 
 # ============================================================================
@@ -67,7 +79,7 @@ def _make_panel(mask_u8, h, w, tint_bgr, label):
     return panel
 
 
-def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, error):
+def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, error, detections=None):
     if raw_bgr is None:
         return None
 
@@ -81,6 +93,15 @@ def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, er
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
     cv2.putText(raw, f"err:{error:+.3f}", (8, h - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1)
+
+    # Draw detection boxes
+    if detections:
+        for (x1, y1, x2, y2), score, cls_id in detections:
+            color = CLASS_COLORS.get(cls_id, (255, 255, 255))
+            cv2.rectangle(raw, (x1, y1), (x2, y2), color, 2)
+            label_txt = f"{CLASS_NAMES.get(cls_id, '?')} {score:.2f}"
+            cv2.putText(raw, label_txt, (x1, max(y1 - 6, 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
     p_yellow = _make_panel(_mask_to_uint8(mask_yellow), panel_h, panel_w,
                            tint_bgr=[0, 220, 220], label="YELLOW LANE")
@@ -170,7 +191,6 @@ class LaneFollowingController:
         self.last_mask_white  = None
         self.last_mask_yellow = None
 
-    # kept for backward compat
     def reset_error(self):
         self.reset()
 
@@ -403,7 +423,7 @@ class IntersectionFSM:
 class NavigationAgent:
 
     def __init__(self):
-        self.lane_follower   = LaneFollowingController()
+        self.lane_follower    = LaneFollowingController()
         self.intersection_fsm = IntersectionFSM()
         self.state            = "driving"
         self.current_route    = None
@@ -411,6 +431,19 @@ class NavigationAgent:
         self._driving_frames  = 0
         self.last_state       = None
         self._route_initialized = False
+        self.last_detections  = []
+
+        # Object detector — shared across resets, loaded once
+        if _DETECTION_AVAILABLE:
+            try:
+                self.detector = ObjectDetectionAgent()
+                print("[Agent] Object detector loaded")
+            except Exception as e:
+                print(f"[Agent] Object detector failed to load: {e}")
+                self.detector = None
+        else:
+            self.detector = None
+
         _reset_heading()
 
     def reset(self):
@@ -424,6 +457,7 @@ class NavigationAgent:
         self._driving_frames    = 0
         self.last_state         = None
         self._route_initialized = False
+        self.last_detections    = []
         _reset_heading()
 
     def _transition(self, new_state):
@@ -460,6 +494,22 @@ class NavigationAgent:
             print(f"[Agent] Dijkstra error: {e}")
             return None
 
+    def _run_detection(self, frame_bgr):
+        """Run object detection and update self.last_detections. Returns (stop, reason)."""
+        if self.detector is None:
+            return False, ''
+        try:
+            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            detections = self.detector.detect(frame_rgb)
+            if detections is not None:
+                self.last_detections = detections
+            if self.last_detections:
+                h, w = frame_bgr.shape[:2]
+                return should_stop(self.last_detections, w)
+        except Exception as e:
+            print(f"[Agent] Detection error: {e}")
+        return False, ''
+
     def update(self, image, camera, wheels, leds, current_node, goal_node):
         global debug_frame
 
@@ -490,6 +540,7 @@ class NavigationAgent:
                 self._driving_frames = 0
                 self._red_window.clear()
                 self.lane_follower.reset()
+                self.last_detections = []
                 self._transition("driving")
 
             if frame_bgr is not None:
@@ -497,12 +548,32 @@ class NavigationAgent:
                     frame_bgr,
                     mask_yellow=None, mask_white=None, mask_red=None,
                     state=self.state, sub=fsm_phase, error=0.0,
+                    detections=self.last_detections,
                 )
             return True
 
         # ── DRIVING ───────────────────────────────────────────────────────────
         if self.state == "driving":
             left, right = self.lane_follower.compute_commands(frame_bgr)
+
+            # ── Object detection — stop if something is in the way ────────────
+            obj_stop, obj_reason = self._run_detection(frame_bgr)
+            if obj_stop:
+                print(f"[Agent] Object detected — stopping: {obj_reason}")
+                wheels.set_wheels_speed(0.0, 0.0)
+                # Update debug frame so the box is visible while stopped
+                if frame_bgr is not None:
+                    debug_frame = build_debug_frame(
+                        raw_bgr     = frame_bgr,
+                        mask_yellow = self.lane_follower.last_mask_yellow,
+                        mask_white  = self.lane_follower.last_mask_white,
+                        mask_red    = red_mask,
+                        state       = self.state,
+                        sub         = "BLOCKED",
+                        error       = self.lane_follower.last_error,
+                        detections  = self.last_detections,
+                    )
+                return True  # keep running — will re-check next frame
 
             self._driving_frames += 1
             armed = self._driving_frames >= RED_ARM_FRAMES
@@ -550,6 +621,7 @@ class NavigationAgent:
                 state       = self.state,
                 sub         = fsm_phase,
                 error       = self.lane_follower.last_error,
+                detections  = self.last_detections,
             )
 
         return True
@@ -567,10 +639,10 @@ def main(camera, wheels, leds, stop_event, server_module=None):
     global server
     if server_module is not None:
         server = server_module
-        """Entry point called by the server. Resets all state before running."""
+
     global debug_frame
 
-    # ── Full reset so every navigation start is clean ──────────────────────
+    # Full reset so every navigation start is clean
     agent.reset()
     debug_frame = None
 
@@ -588,6 +660,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                 ok, frame_rgb = camera.read()
                 if ok and frame_rgb is not None:
                     frame_rgb = cv2.cvtColor(frame_rgb, cv2.COLOR_BGR2RGB)
+
             if not ok or frame_rgb is None:
                 time.sleep(0.02)
                 continue
@@ -602,6 +675,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                 if wheels:
                     wheels.set_wheels_speed(0.0, 0.0)
                 time.sleep(2.0)
+
                 # Dance
                 end_time = time.time() + 4.0
                 step = 0
@@ -623,6 +697,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                             pass
                     time.sleep(0.1)
                     step += 1
+
                 if wheels:
                     wheels.set_wheels_speed(0.0, 0.0)
                 if leds:
@@ -633,7 +708,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                 print("[Agent] Dance done — stopping")
                 break
 
-            time.sleep(0.02)   # 50 Hz
+            time.sleep(0.02)  # ~50 Hz
 
     finally:
         if wheels:
