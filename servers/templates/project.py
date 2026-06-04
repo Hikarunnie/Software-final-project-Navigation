@@ -8,6 +8,103 @@ _CONTENT = '''
 
         <div class="controls-section">
 
+            <!-- HSV Calibration card -->
+            <div class="card">
+                <div class="card-header">HSV Color Calibration</div>
+
+                <div class="hsv-section-title yellow">Yellow Line (left / dashed)</div>
+
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue Low</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowH" min="0" max="179" value="20" class="slider">
+                        <input type="number" id="yLowH-input" min="0" max="179" value="20" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue High</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighH" min="0" max="179" value="40" class="slider">
+                        <input type="number" id="yHighH-input" min="0" max="179" value="40" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowS" min="0" max="255" value="80" class="slider">
+                        <input type="number" id="yLowS-input" min="0" max="255" value="80" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighS" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="yHighS-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowV" min="0" max="255" value="100" class="slider">
+                        <input type="number" id="yLowV-input" min="0" max="255" value="100" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighV" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="yHighV-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+
+                <div class="hsv-section-title white" style="margin-top:20px">White Line (right / solid)</div>
+
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue Low</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowH" min="0" max="179" value="0" class="slider">
+                        <input type="number" id="wLowH-input" min="0" max="179" value="0" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue High</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighH" min="0" max="179" value="179" class="slider">
+                        <input type="number" id="wHighH-input" min="0" max="179" value="179" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowS" min="0" max="255" value="0" class="slider">
+                        <input type="number" id="wLowS-input" min="0" max="255" value="0" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighS" min="0" max="255" value="40" class="slider">
+                        <input type="number" id="wHighS-input" min="0" max="255" value="40" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowV" min="0" max="255" value="180" class="slider">
+                        <input type="number" id="wLowV-input" min="0" max="255" value="180" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighV" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="wHighV-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+
+                <div id="hsv-status" class="status"></div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     Status
@@ -140,6 +237,9 @@ _EXTRA_CSS = '''
 .key-down  { grid-area: down; }
 .key-left  { grid-area: left; }
 .key-right { grid-area: right; }
+.hsv-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.hsv-section-title.yellow { color: #f1c40f; }
+.hsv-section-title.white  { color: #ecf0f1; }
 '''
 
 _EXTRA_JS = '''
@@ -324,6 +424,42 @@ fetch('/get_start').then(r => r.json()).then(d => {
 fetch('/get_goal').then(r => r.json()).then(d => {
     document.getElementById('goalNode').value = d.node;
 }).catch(() => {});
+
+// Load HSV bounds from server on page load
+fetch('/get_hsv')
+    .then(r => r.json())
+    .then(d => {
+        setSliderValue('yLowH',  d.yellow_lower_h);
+        setSliderValue('yHighH', d.yellow_upper_h);
+        setSliderValue('yLowS',  d.yellow_lower_s);
+        setSliderValue('yHighS', d.yellow_upper_s);
+        setSliderValue('yLowV',  d.yellow_lower_v);
+        setSliderValue('yHighV', d.yellow_upper_v);
+        setSliderValue('wLowH',  d.white_lower_h);
+        setSliderValue('wHighH', d.white_upper_h);
+        setSliderValue('wLowS',  d.white_lower_s);
+        setSliderValue('wHighS', d.white_upper_s);
+        setSliderValue('wLowV',  d.white_lower_v);
+        setSliderValue('wHighV', d.white_upper_v);
+    });
+
+const hsvKeys = {
+    'yLowH':  'yellow_lower_h', 'yHighH': 'yellow_upper_h',
+    'yLowS':  'yellow_lower_s', 'yHighS': 'yellow_upper_s',
+    'yLowV':  'yellow_lower_v', 'yHighV': 'yellow_upper_v',
+    'wLowH':  'white_lower_h',  'wHighH': 'white_upper_h',
+    'wLowS':  'white_lower_s',  'wHighS': 'white_upper_s',
+    'wLowV':  'white_lower_v',  'wHighV': 'white_upper_v',
+};
+
+Object.entries(hsvKeys).forEach(([sliderId, key]) => {
+    syncSliderInput(sliderId, () => {
+        const payload = {};
+        payload[key] = parseInt(document.getElementById(sliderId).value);
+        postJSON('/update_hsv', payload)
+            .then(() => showStatus('hsv-status', 'HSV Updated!', 'success'));
+    });
+});
 
 refreshStatus();
 setInterval(refreshStatus, 500);
