@@ -4,6 +4,7 @@ import signal
 import threading
 import argparse
 import time
+import yaml
 
 script_dir   = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
@@ -21,6 +22,8 @@ from launcher.ports import find_available_port
 from servers.common import shutdown_cleanup, suppress_http_logs
 from servers.templates.project import get_template as HTML_TEMPLATE
 from tasks.project.packages.optimal_path import dijkstra
+from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
+from servers.visual_lane_servoing.visualization import create_lane_visualization
 
 app        = Flask(__name__)
 camera     = None
@@ -45,6 +48,11 @@ _DANCE_COLORS = [
 maneuver_thread = None
 maneuver_stop   = threading.Event()
 
+LANE_HSV_CONFIG_FILE = os.path.join(project_root, 'config', 'lane_servoing_hsv_config.yaml')
+
+def _get_student_module():
+    from tasks.visual_lane_servoing.packages import visual_servoing_activity
+    return visual_servoing_activity
 
 def start_maneuver(fn, *args):
     global maneuver_thread, maneuver_stop
@@ -92,22 +100,25 @@ def dance(duration_sec, stop_ev):
         wheels.set_wheels_speed(0.0, 0.0)
     print("[Dance] Done")
 
-
-
-
+_vls_agent = LaneServoingAgent()
 
 def generate_frames():
     import tasks.project.packages.agent as agent
     while True:
         try:
-            if not _manual_mode and agent.debug_frame is not None:
-                display = agent.debug_frame
-            else:
-                if camera is None:
-                    display = None
-                else:
-                    ok, frame = camera.read()
-                    display = frame if (ok and frame is not None) else None
+            display = None
+            if camera is not None:
+                ok, frame = camera.read()
+                if ok and frame is not None:
+                    # frame is BGR
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    _vls_agent.compute_commands(rgb_frame)
+                    display = create_lane_visualization(
+                        frame,
+                        _vls_agent.last_debug_info,
+                        current_speeds['left'],
+                        current_speeds['right']
+                    )
 
             if display is None:
                 placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -161,6 +172,31 @@ def index():
         title="Navigation — Project",
         subtitle="Real Duckiebot",
     )
+
+
+@app.route('/get_hsv')
+def get_hsv():
+    return jsonify(_get_student_module().get_hsv_bounds())
+
+
+@app.route('/update_hsv', methods=['POST'])
+def update_hsv():
+    data = request.json
+    mod = _get_student_module()
+    current = mod.get_hsv_bounds()
+    current.update({k: int(v) for k, v in data.items()})
+    mod.set_hsv_bounds(
+        [current['yellow_lower_h'], current['yellow_lower_s'], current['yellow_lower_v']],
+        [current['yellow_upper_h'], current['yellow_upper_s'], current['yellow_upper_v']],
+        [current['white_lower_h'],  current['white_lower_s'],  current['white_lower_v']],
+        [current['white_upper_h'],  current['white_upper_s'],  current['white_upper_v']],
+    )
+    try:
+        with open(LANE_HSV_CONFIG_FILE, 'w') as f:
+            yaml.dump(current, f, default_flow_style=False)
+    except Exception as e:
+        print(f"[Project] Could not save HSV config: {e}")
+    return jsonify({'status': 'ok'})
 
 
 @app.route('/video')

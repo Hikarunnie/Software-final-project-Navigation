@@ -5,7 +5,7 @@ from collections import deque
 
 from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
-from tasks.visual_lane_servoing.packages.visual_servoing_activity import detect_lane_markings
+from tasks.project.packages.visual_servoing_activity import detect_lane_markings
 import servers.project.virtual_server as server
 
 
