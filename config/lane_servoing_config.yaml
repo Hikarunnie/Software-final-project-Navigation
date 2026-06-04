@@ -1,9 +1,10 @@
-base_speed: 0.33
-curve_boost: 1.3
-curve_speed: 0.15
-curve_threshold: 350
-d_gain: 0.6
+base_speed: 0.31
+curve_speed: 0.25
+d_gain: 0.79
 detection_threshold: 100
-max_steer: 0.4
-p_gain: 0.1
-steering_threshold: 0.2
+p_gain: 0.16
+# NOTE: heading_gain / lateral_gain are NOT read by LaneServoingAgent (which is
+# a PD controller on lateral error using p_gain/d_gain). They are recorded here
+# but have no effect until wired into the controller — ask to enable.
+heading_gain: 1.03
+lateral_gain: 26

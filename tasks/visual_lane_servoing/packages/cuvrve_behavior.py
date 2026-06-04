@@ -1,30 +1,24 @@
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 
 
-def detect_curve(
-    yellow_xs: List[int],
-    white_xs: List[int],
-    curve_threshold: int = 350,
-) -> Tuple[bool, int]:
-    # Prefer yellow if available, otherwise fallback to white
-    xs = None
-    if len(yellow_xs) > 1:
-        xs = yellow_xs
-    elif len(white_xs) > 1:
-        xs = white_xs
-    else:
-        return False, 0  # not enough data
+def detect_curve(yellow_xs: List[int],white_xs:  List[int],curve_threshold: int = 350,
+    ) -> Tuple[bool, int]:
+    shifts = []
 
-    # Near vs far points
-    x_near = xs[0]
-    x_far = xs[-1]
+    if len(yellow_xs) >= 2 and yellow_xs[0] is not None and yellow_xs[-1] is not None:
+        shifts.append(yellow_xs[-1] - yellow_xs[0])  # far minus near
+    if len(white_xs) >= 2 and white_xs[0] is not None and white_xs[-1] is not None:
+        shifts.append(white_xs[-1] - white_xs[0])
 
-    shift = x_far - x_near
+    if not shifts:
+        return False, 0
 
-    # Detect curve
-    if abs(shift) > curve_threshold:
-        direction = 1 if shift > 0 else -1
-        return True, direction
+    avg_shift = int(np.mean(shifts))
+
+    if abs(avg_shift) > curve_threshold:
+        # positive shift = lines moved right in image = road curves left
+        # negative shift = lines moved left = road curves right
+        return True, avg_shift
 
     return False, 0

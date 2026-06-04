@@ -100,7 +100,7 @@ def generate_frames():
     import tasks.project.packages.agent as agent
     while True:
         try:
-            if not _manual_mode and agent.debug_frame is not None:
+            if agent.debug_frame is not None:
                 display = agent.debug_frame
             else:
                 if camera is None:
@@ -244,7 +244,24 @@ def set_start():
 def get_start():
     return jsonify({'node': current_node})
 
+@app.route('/get_hsv')
+def get_hsv():
+    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds
+    return jsonify(get_hsv_bounds())
 
+@app.route('/update_hsv', methods=['POST'])
+def update_hsv():
+    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds, set_hsv_bounds
+    data = request.json
+    current = get_hsv_bounds()
+    current.update({k: int(v) for k, v in data.items() if k in current})
+    set_hsv_bounds(
+        [current['yellow_lower_h'], current['yellow_lower_s'], current['yellow_lower_v']],
+        [current['yellow_upper_h'], current['yellow_upper_s'], current['yellow_upper_v']],
+        [current['white_lower_h'],  current['white_lower_s'],  current['white_lower_v']],
+        [current['white_upper_h'],  current['white_upper_s'],  current['white_upper_v']],
+    )
+    return jsonify({'status': 'ok', 'new_values': get_hsv_bounds()})
 @app.route('/set_goal', methods=['POST'])
 def set_goal():
     global goal_node

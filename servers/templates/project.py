@@ -20,6 +20,15 @@ _CONTENT = '''
                     </div>
                 </div>
             </div>
+            
+            <div class="card">
+    <div class="card-header">HSV Calibration</div>
+    <div style="font-size:12px;color:#f1c40f;font-weight:600;margin-bottom:8px;">YELLOW LINE</div>
+    <div id="hsv-sliders-yellow"></div>
+    <div style="font-size:12px;color:#ecf0f1;font-weight:600;margin:12px 0 8px;">WHITE LINE</div>
+    <div id="hsv-sliders-white"></div>
+    <div id="hsv-status" class="status"></div>
+</div>
 
             <div class="card">
                 <div class="card-header">Mode</div>
@@ -142,7 +151,83 @@ const keyMap = {
     'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
     'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
 };
+const hsvKeys = {
+    yellow: ['yellow_lower_h','yellow_upper_h','yellow_lower_s','yellow_upper_s','yellow_lower_v','yellow_upper_v'],
+    white:  ['white_lower_h', 'white_upper_h', 'white_lower_s', 'white_upper_s', 'white_lower_v', 'white_upper_v'],
+};
+const hsvRanges = {h: 179, s: 255, v: 255};
+function postJSON(url, data) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(r => r.json());
+}
 
+function showStatus(id, msg, type) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)';
+    setTimeout(() => { el.textContent = ''; }, 3000);
+}
+function buildHsvSliders() {
+    ['yellow','white'].forEach(color => {
+        const container = document.getElementById('hsv-sliders-' + color);
+        hsvKeys[color].forEach(key => {
+            const label = key.replace(color + '_', '').replace('_', ' ').toUpperCase();
+            const letter = key.slice(-1);
+            const max = hsvRanges[letter] || 255;
+            
+            const wrapper = document.createElement('div');
+            wrapper.style.marginBottom = '6px';
+            
+            const labelRow = document.createElement('div');
+            labelRow.style.cssText = 'display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);';
+            labelRow.innerHTML = '<span>' + label + '</span><span id="' + key + '-val">0</span>';
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = key;
+            slider.min = 0;
+            slider.max = max;
+            slider.value = 0;
+            slider.style.width = '100%';
+            slider.addEventListener('input', function() {
+                document.getElementById(key + '-val').textContent = this.value;
+                console.log('Slider moved:', key, this.value);
+                sendHsv(key, this.value);
+            });
+            
+            wrapper.appendChild(labelRow);
+            wrapper.appendChild(slider);
+            container.appendChild(wrapper);
+        });
+    });
+}
+
+function sendHsv(key, val) {
+    const payload = {};
+    payload[key] = parseInt(val);
+    postJSON('/update_hsv', payload)
+        .then(r => {
+            console.log('HSV update response:', r);
+            showStatus('hsv-status', 'Updated', 'success');
+        })
+        .catch(e => {
+            console.log('HSV update error:', e);
+            showStatus('hsv-status', 'Error', 'error');
+        });
+}
+
+buildHsvSliders();
+
+fetch('/get_hsv').then(r => r.json()).then(d => {
+    Object.entries(d).forEach(([k, v]) => {
+        const el = document.getElementById(k);
+        if (el) { el.value = v; document.getElementById(k + '-val').textContent = v; }
+    });
+}).catch(() => {});
 function toggleMode(isManual) {
     manualMode = isManual;
     document.getElementById('driveCard').style.display = isManual ? 'block' : 'none';
