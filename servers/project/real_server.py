@@ -3,12 +3,13 @@ import os
 import signal
 import threading
 import argparse
+import time
 
 script_dir   = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
 sys.path.insert(0, project_root)
 
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, request
 import numpy as np
 import cv2
 
@@ -17,9 +18,9 @@ from duckiebot.wheel_driver import DaguWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.led_driver import LEDDriver
 from launcher.ports import find_available_port
-from servers.common import make_frame_generator, shutdown_cleanup, suppress_http_logs
-
-import tasks.project.packages.agent as agent
+from servers.common import shutdown_cleanup, suppress_http_logs
+from servers.templates.project import get_template as HTML_TEMPLATE
+from tasks.project.packages.optimal_path import dijkstra
 
 app        = Flask(__name__)
 camera     = None
@@ -27,23 +28,269 @@ wheels     = None
 leds       = None
 stop_event = threading.Event()
 
+current_node = 1
+goal_node    = 3
+_manual_mode = False
+_navigation_thread = None
+_navigation_stop   = threading.Event()
+keys_pressed = {'up': False, 'down': False, 'left': False, 'right': False}
+keys_lock    = threading.Lock()
+_keys_last_update = time.time()
+current_speeds = {'left': 0.0, 'right': 0.0}
 
-def _visualize(frame):
-    if frame is not None:
-        return frame
-    blank = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(blank, "Waiting for camera...", (160, 240),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (80, 80, 80), 2)
-    return blank
+_DANCE_COLORS = [
+    [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
+    [1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0],
+]
+maneuver_thread = None
+maneuver_stop   = threading.Event()
 
 
-generate_frames = make_frame_generator(lambda: camera, _visualize, quality=70, rgb=False)
+def start_maneuver(fn, *args):
+    global maneuver_thread, maneuver_stop
+    maneuver_stop.set()
+    if maneuver_thread and maneuver_thread.is_alive():
+        maneuver_thread.join(timeout=1.5)
+    maneuver_stop = threading.Event()
+    maneuver_thread = threading.Thread(
+        target=fn, args=(*args, maneuver_stop), daemon=True
+    )
+    maneuver_thread.start()
+
+
+def dance(duration_sec, stop_ev):
+    print(f"[Dance] Starting for {duration_sec:.1f}s")
+    duration = float(np.clip(duration_sec, 0.5, 10.0))
+
+    if wheels:
+        wheels.set_wheels_speed(0.8, -0.8)
+        time.sleep(0.6)
+        wheels.set_wheels_speed(0.8, 0.8)
+        time.sleep(1.0)
+        wheels.set_wheels_speed(0.0, 0.0)
+        time.sleep(0.1)
+
+    end_time = time.time() + duration
+    step = 0
+    while not stop_ev.is_set() and time.time() < end_time:
+        if step % 2 == 0:
+            left, right = 0.8, -0.8
+        else:
+            left, right = -0.8, 0.8
+        if wheels:
+            wheels.set_wheels_speed(left, right)
+        if leds:
+            try:
+                color = _DANCE_COLORS[step % len(_DANCE_COLORS)]
+                leds.set_led(0, color)
+            except Exception:
+                pass
+        time.sleep(0.1)
+        step += 1
+
+    if wheels:
+        wheels.set_wheels_speed(0.0, 0.0)
+    print("[Dance] Done")
+
+
+
+
+
+def generate_frames():
+    import tasks.project.packages.agent as agent
+    while True:
+        try:
+            if not _manual_mode and agent.debug_frame is not None:
+                display = agent.debug_frame
+            else:
+                if camera is None:
+                    display = None
+                else:
+                    ok, frame = camera.read()
+                    display = frame if (ok and frame is not None) else None
+
+            if display is None:
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, "Waiting for camera...", (160, 240),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (80, 80, 80), 2)
+                display = placeholder
+
+            ret, jpeg = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ret:
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                       + jpeg.tobytes() + b'\r\n')
+        except Exception as e:
+            print(f"[VideoStream] Error: {e}")
+        time.sleep(0.033)
+
+def start_navigation():
+    global _navigation_thread, _navigation_stop
+    import tasks.project.packages.agent as agent
+
+    if _navigation_thread and _navigation_thread.is_alive():
+        print("[Navigation] Already running")
+        return
+
+    print("[Navigation] Starting navigation loop...")
+    _navigation_stop.clear()
+    _navigation_thread = threading.Thread(
+        target=agent.main,
+        args=(camera, wheels, leds, _navigation_stop),
+        daemon=True,
+        name='NavigationThread'
+    )
+    _navigation_thread.start()
+
+
+def stop_navigation():
+    global _navigation_thread, _navigation_stop
+
+    if not _navigation_thread or not _navigation_thread.is_alive():
+        print("[Navigation] Not running")
+        return
+
+    print("[Navigation] Stopping navigation loop...")
+    _navigation_stop.set()
+    _navigation_thread.join(timeout=2.0)
+    print("[Navigation] Navigation stopped")
+
+
+@app.route('/')
+def index():
+    return HTML_TEMPLATE(
+        title="Navigation — Project",
+        subtitle="Real Duckiebot",
+    )
 
 
 @app.route('/video')
 def video():
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/status')
+def status():
+    return jsonify({
+        'current_node': current_node,
+        'goal_node':    goal_node,
+        'left_speed':   round(current_speeds['left'], 2),
+        'right_speed':  round(current_speeds['right'], 2),
+        'mode':         'manual' if _manual_mode else 'navigation',
+    })
+
+
+@app.route('/keys', methods=['POST'])
+def update_keys():
+    global keys_pressed, _keys_last_update
+    data = request.json
+    with keys_lock:
+        keys_pressed = {
+            'up':    bool(data.get('up', False)),
+            'down':  bool(data.get('down', False)),
+            'left':  bool(data.get('left', False)),
+            'right': bool(data.get('right', False)),
+        }
+    _keys_last_update = time.time()
+
+    up    = keys_pressed['up']
+    down  = keys_pressed['down']
+    left  = keys_pressed['left']
+    right = keys_pressed['right']
+
+    if up and not down:
+        l, r = 0.4, 0.4
+    elif down and not up:
+        l, r = -0.4, -0.4
+    elif left and not right:
+        l, r = -0.3, 0.3
+    elif right and not left:
+        l, r = 0.3, -0.3
+    else:
+        l, r = 0.0, 0.0
+
+    current_speeds['left']  = l
+    current_speeds['right'] = r
+
+    if _manual_mode and wheels:
+        wheels.set_wheels_speed(l, r)
+
+    return jsonify({'status': 'ok', 'left': l, 'right': r})
+
+
+@app.route('/set_mode', methods=['POST'])
+def set_mode():
+    global _manual_mode
+    _manual_mode = bool(request.json.get('manual', False))
+    if _manual_mode:
+        print("[Mode] Manual Drive - stopping navigation")
+        stop_navigation()
+        if wheels:
+            wheels.set_wheels_speed(0.0, 0.0)
+    else:
+        print("[Mode] Autonomous Navigation - starting agent")
+        start_navigation()
+    return jsonify({'status': 'ok', 'manual': _manual_mode})
+
+
+@app.route('/set_start', methods=['POST'])
+def set_start():
+    global current_node
+    current_node = int(request.json['node'])
+    return jsonify({'status': 'ok', 'node': current_node})
+
+
+@app.route('/get_start')
+def get_start():
+    return jsonify({'node': current_node})
+
+
+@app.route('/set_goal', methods=['POST'])
+def set_goal():
+    global goal_node
+    goal_node = int(request.json['node'])
+    route = dijkstra(current_node, goal_node)
+
+    print("\n===================")
+    print("PATH PLANNER")
+    print("===================")
+    print(f"Start: {current_node}")
+    print(f"Goal: {goal_node}")
+    print(f"Path: {route['path']}")
+    print(f"Edges: {route['edges']}")
+    print(f"Distance: {route['distance']}")
+    print("===================\n")
+
+    return jsonify({
+        'status':   'ok',
+        'node':     goal_node,
+        'path':     route['path'],
+        'distance': route['distance'] if route['path'] else None,
+    })
+
+
+@app.route('/get_goal')
+def get_goal():
+    return jsonify({'node': goal_node})
+
+
+@app.route('/maneuver', methods=['POST'])
+def run_maneuver():
+    data  = request.json
+    mtype = data.get('type', '')
+    value = float(data.get('value', 0.5))
+
+    if mtype == 'dance':
+        distance = float(np.clip(value, 3.0, 10.0))
+        start_maneuver(dance, distance)
+        return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
+
+    return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
+
+
+@app.route('/speeds')
+def get_speeds():
+    return jsonify(current_speeds)
 
 
 @app.route('/shutdown')
@@ -82,15 +329,7 @@ def main():
     camera.start()
     print('  Camera: ok')
 
-    print('\n[4/4] Starting agent...')
-    stop_event.clear()
-    threading.Thread(
-        target=agent.main,
-        args=(camera, wheels, leds, stop_event),
-        daemon=True,
-        name='AgentThread',
-    ).start()
-    print('  agent.main() running')
+    print('\n[4/4] Ready — use the UI to start navigation')
 
     def _shutdown(signum, frame):
         print('\nShutting down...')
@@ -107,7 +346,7 @@ def main():
     signal.signal(signal.SIGINT,  _shutdown)
 
     web_port = find_available_port(args.port)
-    print(f'\nVideo stream: http://localhost:{web_port}/video')
+    print(f'\nWeb UI: http://10.251.244.26:{web_port}')
     print('Press Ctrl+C to stop\n')
 
     try:

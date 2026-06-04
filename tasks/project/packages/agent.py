@@ -55,7 +55,7 @@ RED_ARM_FRAMES   = 32        # frames after state entry before red is checked
 # DEBUG VISUALISATION
 # ============================================================================
 
-debug_frame: np.ndarray | None = None
+debug_frame = None
 
 
 def _mask_to_uint8(mask: np.ndarray) -> np.ndarray:
@@ -181,8 +181,8 @@ class LaneFollowingController:
         self.base_speed       = 0.10
         self.prev_error       = 0.0
         self._lane_half_width = 160.0
-        self.last_mask_white: np.ndarray | None  = None
-        self.last_mask_yellow: np.ndarray | None = None
+        self.last_mask_white = None
+        self.last_mask_yellow = None
         self.last_error: float = 0.0
 
     def reset_error(self):
@@ -643,13 +643,11 @@ def main(camera, wheels, leds, stop_event):
         while not stop_event.is_set():
             start = server.current_node
             goal  = server.goal_node
-
-            ok, frame_rgb = camera.read_rgb()
-            if not ok or frame_rgb is None:
+            # NEW
+            ok, frame_bgr = camera.read()
+            if not ok or frame_bgr is None:
                 time.sleep(0.02)
                 continue
-
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
 
             should_continue = agent.update(
                 frame_bgr, camera, wheels, leds, start, goal

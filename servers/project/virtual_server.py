@@ -4,7 +4,6 @@ import threading
 import time
 import argparse
 from tasks.project.packages.optimal_path import dijkstra
-import tasks.project.packages.agent as agent
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
@@ -93,11 +92,12 @@ def control_loop():
 def start_navigation():
     """Start the autonomous navigation thread."""
     global _navigation_thread, _navigation_stop
-    
+    import tasks.project.packages.agent as agent
+
     if _navigation_thread and _navigation_thread.is_alive():
         print("[Navigation] Already running")
         return
-    
+
     print("[Navigation] Starting navigation loop...")
     _navigation_stop.clear()
     _navigation_thread = threading.Thread(
@@ -112,11 +112,11 @@ def start_navigation():
 def stop_navigation():
     """Stop the autonomous navigation thread."""
     global _navigation_thread, _navigation_stop
-    
+
     if not _navigation_thread or not _navigation_thread.is_alive():
         print("[Navigation] Not running")
         return
-    
+
     print("[Navigation] Stopping navigation loop...")
     _navigation_stop.set()
     _navigation_thread.join(timeout=2.0)
@@ -236,13 +236,12 @@ def generate_frames():
     - Nav mode:    serves agent.debug_frame (already BGR, annotated with masks).
     - Manual mode: reads raw camera and runs create_visualization as before.
     """
+    import tasks.project.packages.agent as agent
     while True:
         try:
-            # ── Autonomous nav: use the pre-built debug frame ─────────────────
             if not _manual_mode and agent.debug_frame is not None:
                 display = agent.debug_frame
             else:
-                # ── Manual / fallback: read camera and annotate ───────────────
                 if camera is None:
                     display = None
                 else:
@@ -262,7 +261,7 @@ def generate_frames():
                        + jpeg.tobytes() + b'\r\n')
         except Exception as e:
             print(f"[VideoStream] Error: {e}")
-        time.sleep(0.033)   # ~30 fps
+        time.sleep(0.033)
 
 
 @app.route('/')
@@ -307,14 +306,14 @@ def set_mode():
     _manual_mode = bool(request.json.get('manual', False))
     if not _manual_mode and wheels:
         wheels.set_wheels_speed(0.0, 0.0)
-    
+
     if _manual_mode:
         print(f"[Mode] Manual Drive - stopping navigation")
         stop_navigation()
     else:
         print(f"[Mode] Autonomous Navigation - starting agent")
         start_navigation()
-    
+
     return jsonify({'status': 'ok', 'manual': _manual_mode})
 
 
@@ -419,18 +418,22 @@ def set_goal():
         'status': 'ok',
         'node': goal_node,
         'path': route['path'],
-        'distance': route['distance'] if route['path'] else None  # inf breaks JSON
+        'distance': route['distance'] if route['path'] else None
     })
+
+
 @app.route('/route')
 def route():
     result = dijkstra(current_node, goal_node)
     if not result['path']:
-        result['distance'] = None 
+        result['distance'] = None
     return jsonify(result)
+
 
 @app.route('/get_goal')
 def get_goal():
     return jsonify({'node': goal_node})
+
 
 @app.route('/status')
 def status():

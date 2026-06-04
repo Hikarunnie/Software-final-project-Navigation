@@ -1,33 +1,43 @@
-import godot.utils.map
+try:
+    import godot.utils.map
+    _GODOT_AVAILABLE = True
+except ImportError:
+    _GODOT_AVAILABLE = False
 
 
 class RoadMap:
     """
     Weighted undirected graph representing the Duckietown road network.
-    Nodes = intersections (curve/cross tiles), Edges = roads between them.
+    Nodes = intersections (cross tiles only), Edges = roads between them.
     In simulation: loaded from the Godot scene file.
     On real robot: falls back to hardcoded map matching the physical track.
     """
 
     def __init__(self, scene_name="test1_actual_map_kiu"):
-        try:
-            self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
-            print(f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)")
-        except Exception as e:
-            print(f"[RoadMap] Could not load scene '{scene_name}': {e}")
-            print("[RoadMap] Using hardcoded fallback map")
-            self.nodes = {
-                1: {"id": 1, "x": 2.7, "y": 2.1},
-                2: {"id": 2, "x": 0.9, "y": 4.5},
-                3: {"id": 3, "x": 2.1, "y": 4.5},
-            }
-            self.edges = {
-                "1-3-a": {"from": 1, "to": 3, "length": 13},
-                "1-2-a": {"from": 1, "to": 2, "length": 7},
-                "1-3-b": {"from": 1, "to": 3, "length": 5},
-                "2-3-a": {"from": 2, "to": 3, "length": 2},
-                "2-3-b": {"from": 2, "to": 3, "length": 10},
-            }
+        if _GODOT_AVAILABLE:
+            try:
+                self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
+                print(f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)")
+            except Exception as e:
+                print(f"[RoadMap] Scene load failed: {e}, using fallback")
+                self._load_hardcoded()
+        else:
+            print("[RoadMap] Godot not available, using hardcoded map")
+            self._load_hardcoded()
+
+    def _load_hardcoded(self):
+        self.nodes = {
+            1: {"id": 1, "x": 2.7, "y": 2.1},
+            2: {"id": 2, "x": 0.9, "y": 4.5},
+            3: {"id": 3, "x": 2.1, "y": 4.5},
+        }
+        self.edges = {
+            "1-3-a": {"from": 1, "to": 3, "length": 13},
+            "1-2-a": {"from": 1, "to": 2, "length": 7},
+            "1-3-b": {"from": 1, "to": 3, "length": 5},
+            "2-3-a": {"from": 2, "to": 3, "length": 2},
+            "2-3-b": {"from": 2, "to": 3, "length": 10},
+        }
 
     def neighbors(self, node_id):
         """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""
@@ -81,9 +91,5 @@ class RoadMap:
         return list(self.edges.keys())
 
 
-# Singleton needed to import this in pathfinding and navigation code
+# Singleton — import this in pathfinding and navigation code
 road_map = RoadMap()
-
-
-if __name__ == "__main__":
-    print("Dijkstra 1 -> 3:", road_map.get_edge('1-3-b'))
