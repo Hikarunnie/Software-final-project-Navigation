@@ -71,22 +71,35 @@ class LaneServoingAgent:
         self._right_history = deque(maxlen=3)
         self.last_debug_info = self._empty_debug_info(480, 640)
 
+    # Target positions (fraction of frame width) for each line.
+    # Yellow dashed centre line should appear at ~25 % from left.
+    # White solid edge line should appear at ~75 % from left.
+    _YELLOW_TARGET = 0.25
+    _WHITE_TARGET  = 0.75
+
     def _calculate_error(self, yellow_xs, white_xs, left_det, right_det, w):
-        if left_det and right_det and yellow_xs and white_xs:
-            y_mean = float(np.mean(yellow_xs))
-            w_mean = float(np.mean(white_xs))
-            measured = (w_mean - y_mean) / 2.0
-            if measured > 20:
-                self._lane_half_width = 0.9 * self._lane_half_width + 0.1 * measured
-            error = w / 2.0 - (y_mean + w_mean) / 2.0
-        elif left_det and yellow_xs:
-            error = w / 2.0 - (float(np.mean(yellow_xs)) + self._lane_half_width)
-        elif right_det and white_xs:
-            error = w / 2.0 - (float(np.mean(white_xs)) - self._lane_half_width)
+        """
+        Error > 0 → robot too far LEFT  → steer right.
+        Error < 0 → robot too far RIGHT → steer left.
+        Uses normalised frame-fraction positions — no drifting pixel offsets.
+        """
+        have_yellow = left_det  and len(yellow_xs) > 0
+        have_white  = right_det and len(white_xs)  > 0
+
+        if have_yellow and have_white:
+            y_fx  = float(np.mean(yellow_xs)) / w
+            w_fx  = float(np.mean(white_xs))  / w
+            error = 0.50 - (y_fx + w_fx) / 2.0
+        elif have_yellow:
+            y_fx  = float(np.mean(yellow_xs)) / w
+            error = y_fx - self._YELLOW_TARGET
+        elif have_white:
+            w_fx  = float(np.mean(white_xs)) / w
+            error = w_fx - self._WHITE_TARGET
         else:
             error = self._prev_error
 
-        return float(np.clip(error / (w / 2.0), -1.0, 1.0))
+        return float(np.clip(error, -1.0, 1.0))
 
     def _calculate_steering(self, error: float) -> float:
         error_diff = error - self._prev_error
@@ -108,7 +121,7 @@ class LaneServoingAgent:
 
         if is_curve and abs(steering) > self.steering_threshold:
             if steering > 0:
-                right *= 5
+                right *= self.curve_boost
             else:
                 left *= self.curve_boost
 
