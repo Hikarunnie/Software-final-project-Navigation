@@ -2,9 +2,15 @@
 base_speed: 0.22
 curve_speed: 0.18
 
-# PD gains — p_gain drives turning, must be high enough to actually turn
-p_gain: 0.35
-d_gain: 0.15
+# Lane controller gains
+# k_d  (lateral_gain)  — corrects sideways offset from lane centre
+# k_phi (heading_gain) — corrects angle between robot heading and lane direction
+lateral_gain: 1.0
+heading_gain: 2.0
+
+# Legacy PD gains — no longer used by the controller, kept for reference
+p_gain: 1.0
+d_gain: 2.0
 max_steer: 0.30
 
 # Curve detection
@@ -13,6 +19,4 @@ steering_threshold: 0.15
 curve_boost: 1.3
 
 # Pixel threshold to consider lane detected.
-# Kept LOW (50) because edge+colour filtering produces fewer pixels than raw colour.
-# Raise to 150 only if the robot steers on false positives in open areas.
 detection_threshold: 50
