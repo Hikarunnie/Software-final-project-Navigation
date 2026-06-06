@@ -1,5 +1,5 @@
 # Speed
-base_speed: 0.17
+base_speed: 0.1
 curve_speed: 0.18
 
 # Lane controller gains

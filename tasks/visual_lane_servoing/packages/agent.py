@@ -78,26 +78,24 @@ class LaneServoingAgent:
     _WHITE_TARGET  = 0.75
 
     def _calculate_error(self, yellow_xs, white_xs, left_det, right_det, w):
-        """
-        Error > 0 → robot too far LEFT  → steer right.
-        Error < 0 → robot too far RIGHT → steer left.
-        Uses normalised frame-fraction positions — no drifting pixel offsets.
-        """
-        have_yellow = left_det  and len(yellow_xs) > 0
-        have_white  = right_det and len(white_xs)  > 0
+        have_yellow = left_det and len(yellow_xs) > 0
+        have_white = right_det and len(white_xs) > 0
 
         if have_yellow and have_white:
-            y_fx  = float(np.mean(yellow_xs)) / w
-            w_fx  = float(np.mean(white_xs))  / w
-            error = 0.50 - (y_fx + w_fx) / 2.0
+            y_fx = float(np.mean(yellow_xs)) / w
+            w_fx = float(np.mean(white_xs)) / w
+            error = (0.5 - (y_fx + w_fx) / 2.0) * 3.0  # amplify midpoint error
+
         elif have_yellow:
-            y_fx  = float(np.mean(yellow_xs)) / w
-            error = y_fx - self._YELLOW_TARGET
+            y_fx = float(np.mean(yellow_xs)) / w
+            error = (self._YELLOW_TARGET - y_fx) * 3.0
+
         elif have_white:
-            w_fx  = float(np.mean(white_xs)) / w
-            error = w_fx - self._WHITE_TARGET
+            w_fx = float(np.mean(white_xs)) / w
+            error = (w_fx - self._WHITE_TARGET) * 3.0
+
         else:
-            error = self._prev_error
+            error = self._prev_error * 0.9  # decay instead of holding stale error
 
         return float(np.clip(error, -1.0, 1.0))
 
