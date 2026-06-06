@@ -12,21 +12,18 @@ debug_frame = None
 agent       = None
 
 # ============================================================================
-# TUNING CONSTANTS
+# TUNING CONSTANTS — edit these to tune the robot
 # ============================================================================
 
-CREEP_SPEED        = 0.06
-FORWARD_CLEAR_TIME = 0.55
-TURN_SPEED         = 0.20
-EXIT_SPEED         = 0.08
-EXIT_TIME          = 0.70
+CREEP_SPEED        = 0.06   # speed while creeping over red line
+FORWARD_CLEAR_TIME = 0.55   # seconds to creep forward before turning
+TURN_SPEED         = 0.20   # rotation speed during turn
+EXIT_SPEED         = 0.08   # speed after turn while searching for lane
+EXIT_TIME          = 5 # seconds to drive forward after turn
 
-import os as _os
-_IS_REAL = not bool(_os.environ.get('GODOT_SIM', ''))
-
-TURN_TIME_FORWARD = 0.22
-TURN_TIME_LEFT    = 0.04 if not _IS_REAL else 0.45
-TURN_TIME_RIGHT   = 0.15 if not _IS_REAL else 0.35
+TURN_TIME_FORWARD  = 0.22   # seconds for forward crossing
+TURN_TIME_LEFT     = 0.5   # seconds to rotate left — tune this
+TURN_TIME_RIGHT    = 1.2    # seconds to rotate right — tune this
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,
@@ -161,7 +158,7 @@ def get_direction_from_route(current_node, goal_node, route_path):
     except Exception as e:
         print(f"[Direction] edge lookup error: {e}")
 
-    # Coordinate + heading fallback (real robot)
+    # Coordinate + heading fallback
     try:
         cn = road_map.get_node(current_node)
         nn = road_map.get_node(next_node)
@@ -236,20 +233,24 @@ class IntersectionFSM:
             wheels.set_wheels_speed(CREEP_SPEED, CREEP_SPEED)
             if finished:
                 self._enter_phase("turn")
+
         elif self._phase == "turn":
-            if self._direction == "left":
-                wheels.set_wheels_speed(-TURN_SPEED,  TURN_SPEED)
+            if self._direction == "forward":
+                wheels.set_wheels_speed(CREEP_SPEED, CREEP_SPEED)
+            elif self._direction == "left":
+                wheels.set_wheels_speed(-TURN_SPEED, TURN_SPEED)
             else:
-                wheels.set_wheels_speed( TURN_SPEED, -TURN_SPEED)
+                wheels.set_wheels_speed(TURN_SPEED, -TURN_SPEED)
             if finished:
-                wheels.set_wheels_speed(0.0, 0.0)
                 self._enter_phase("exit")
+
         elif self._phase == "exit":
+            # Drive forward — lane follower picks up when it sees lines
             wheels.set_wheels_speed(EXIT_SPEED, EXIT_SPEED)
             if finished:
-                wheels.set_wheels_speed(0.0, 0.0)
                 self._enter_phase("done")
                 return False
+
         return True
 
 # ============================================================================
@@ -259,10 +260,8 @@ class IntersectionFSM:
 class NavigationAgent:
     def __init__(self):
         self.lane_follower    = LaneServoingAgent()
-        # Shift robot left so it follows yellow and stays away from white.
         self.lane_follower._YELLOW_TARGET = 0.30
         self.lane_follower._WHITE_TARGET  = 0.72
-        # Gains and speed come from lane_servoing_config.yaml — edit that file.
         self.intersection_fsm = IntersectionFSM()
         self.state            = "driving"
         self.current_route    = None
@@ -423,7 +422,6 @@ def main(camera, wheels, leds, stop_event, server_module=None):
             start = server.current_node
             goal  = server.goal_node
 
-            # Read camera → BGR
             if hasattr(camera, 'read_rgb'):
                 ok, frame_rgb = camera.read_rgb()
                 if not ok or frame_rgb is None:
@@ -446,8 +444,8 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                     wheels.set_wheels_speed(0.0, 0.0)
                 time.sleep(2.0)
 
-                end_time    = time.time() + 4.0
-                step        = 0
+                end_time = time.time() + 4.0
+                step = 0
                 dance_colors = [
                     [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
                     [1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0],
