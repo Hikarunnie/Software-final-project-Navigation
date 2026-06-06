@@ -5,7 +5,7 @@ from collections import deque
 
 from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
-from tasks.project.packages.visual_servoing_activity import detect_lane_markings
+from tasks.visual_lane_servoing.packages.visual_servoing_activity import detect_lane_markings
 
 # Object detection
 try:
@@ -29,7 +29,7 @@ CREEP_SPEED        = 0.06
 FORWARD_CLEAR_TIME = 0.55
 TURN_SPEED         = 0.20
 TURN_TIME_FORWARD  = 0.22
-TURN_TIME_LEFT     = 0.14
+TURN_TIME_LEFT     = 0.04
 TURN_TIME_RIGHT    = 0.15
 EXIT_SPEED         = 0.10
 EXIT_TIME          = 0.70
@@ -183,7 +183,7 @@ class LaneFollowingController:
         self._lane_half_width = 160.0
         self.last_mask_white  = None
         self.last_mask_yellow = None
-        self.last_error       = 0.0
+        self.last_error       = 0.0 ,
 
     def reset(self):
         self.prev_error       = 0.0
@@ -556,6 +556,9 @@ class NavigationAgent:
         if self.state == "driving":
             left, right = self.lane_follower.compute_commands(frame_bgr)
 
+            self._driving_frames += 1
+            armed = self._driving_frames >= RED_ARM_FRAMES
+
             # ── Object detection — stop if something is in the way ────────────
             obj_stop, obj_reason = self._run_detection(frame_bgr)
             if obj_stop:
@@ -574,9 +577,6 @@ class NavigationAgent:
                         detections  = self.last_detections,
                     )
                 return True  # keep running — will re-check next frame
-
-            self._driving_frames += 1
-            armed = self._driving_frames >= RED_ARM_FRAMES
 
             if not armed:
                 wheels.set_wheels_speed(left, right)

@@ -247,12 +247,12 @@ def get_start():
 
 @app.route('/get_hsv')
 def get_hsv():
-    from tasks.project.packages.visual_servoing_activity import get_hsv_bounds
+    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds
     return jsonify(get_hsv_bounds())
 
 @app.route('/update_hsv', methods=['POST'])
 def update_hsv():
-    from tasks.project.packages.visual_servoing_activity import get_hsv_bounds, set_hsv_bounds
+    from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds, set_hsv_bounds
     data = request.json
     current = get_hsv_bounds()
     current.update({k: int(v) for k, v in data.items() if k in current})
