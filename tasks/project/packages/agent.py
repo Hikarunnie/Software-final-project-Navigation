@@ -47,6 +47,43 @@ RED_ARM_FRAMES   = 32
 CLASS_NAMES  = {0: 'duckie', 1: 'truck', 2: 'sign'}
 CLASS_COLORS = {0: (0, 215, 255), 1: (180, 100, 220), 2: (50, 205, 50)}
 
+# ============================================================================
+# RED LINE HSV THRESHOLDS  (tunable at runtime via /update_red_hsv)
+# ============================================================================
+# These default values work well on a real Duckiebot under typical lab lighting.
+# If the robot misses or false-triggers on the red line, use the calibration
+# endpoint to tune them without restarting:
+#   GET  /get_red_hsv              → current values
+#   POST /update_red_hsv  {"red_lower1_h": 0, "red_upper1_h": 12, ...}
+#
+# Two HSV ranges are needed because red wraps around H=0/180 in OpenCV:
+#   Range 1: H  0-10  (orange-red)
+#   Range 2: H 165-180 (magenta-red)
+
+_red_hsv = {
+    # Range 1 — lower hue band
+    "red_lower1_h": 0,   "red_lower1_s": 100, "red_lower1_v": 80,
+    "red_upper1_h": 10,  "red_upper1_s": 255, "red_upper1_v": 255,
+    # Range 2 — upper hue band
+    "red_lower2_h": 165, "red_lower2_s": 100, "red_lower2_v": 80,
+    "red_upper2_h": 180, "red_upper2_s": 255, "red_upper2_v": 255,
+    # Morphology / geometry thresholds
+    "min_pixels":   150,   # minimum red pixels to consider
+    "min_aspect":   2.5,   # width/height ratio (line is wide, not tall)
+    "min_width_frac": 0.15,# span_x must be >= this fraction of frame width
+}
+
+
+def get_red_hsv():
+    return dict(_red_hsv)
+
+
+def set_red_hsv(updates: dict):
+    """Merge numeric updates into the red-line detection parameters."""
+    for k, v in updates.items():
+        if k in _red_hsv:
+            _red_hsv[k] = int(v) if k not in ("min_aspect", "min_width_frac") else float(v)
+
 
 # ============================================================================
 # DEBUG VISUALISATION
@@ -91,7 +128,12 @@ def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, er
     label = f"{state.upper()}" + (f"/{sub}" if sub else "")
     cv2.putText(raw, label, (8, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-    cv2.putText(raw, f"err:{error:+.3f}", (8, h - 10),
+    # FIX: guard against error being a tuple (was caused by trailing comma in reset())
+    try:
+        err_val = float(error) if not isinstance(error, tuple) else 0.0
+    except (TypeError, ValueError):
+        err_val = 0.0
+    cv2.putText(raw, f"err:{err_val:+.3f}", (8, h - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1)
 
     # Draw detection boxes
@@ -121,6 +163,14 @@ def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, er
 # ============================================================================
 
 def detect_red_line(image):
+    """
+    Detect a red stop-line in the lower portion of the frame.
+
+    Uses the globally-tunable _red_hsv thresholds so values can be adjusted
+    at runtime without restarting the agent (via /update_red_hsv).
+
+    Returns (detected: bool, mask: uint8 ndarray | None)
+    """
     if image is None or len(image.shape) != 3:
         return False, None
 
@@ -135,10 +185,11 @@ def detect_red_line(image):
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
-    lower_red1 = np.array([0,   100, 100])
-    upper_red1 = np.array([10,  255, 255])
-    lower_red2 = np.array([165, 100, 100])
-    upper_red2 = np.array([180, 255, 255])
+    p = _red_hsv
+    lower_red1 = np.array([p["red_lower1_h"], p["red_lower1_s"], p["red_lower1_v"]])
+    upper_red1 = np.array([p["red_upper1_h"], p["red_upper1_s"], p["red_upper1_v"]])
+    lower_red2 = np.array([p["red_lower2_h"], p["red_lower2_s"], p["red_lower2_v"]])
+    upper_red2 = np.array([p["red_upper2_h"], p["red_upper2_s"], p["red_upper2_v"]])
 
     roi_mask = cv2.bitwise_or(
         cv2.inRange(hsv, lower_red1, upper_red1),
@@ -151,7 +202,7 @@ def detect_red_line(image):
     mask = np.zeros((h, w), dtype=np.uint8)
     mask[roi_top:, :] = roi_mask
 
-    if int(np.count_nonzero(roi_mask)) < 150:
+    if int(np.count_nonzero(roi_mask)) < p["min_pixels"]:
         return False, mask
 
     rows, cols = np.where(roi_mask > 0)
@@ -162,7 +213,7 @@ def detect_red_line(image):
     span_y = int(rows.max() - rows.min()) + 1
     aspect = span_x / max(span_y, 1)
 
-    if aspect < 2.5 or span_x < int(w * 0.15):
+    if aspect < p["min_aspect"] or span_x < int(w * p["min_width_frac"]):
         return False, mask
 
     return True, mask
@@ -183,7 +234,7 @@ class LaneFollowingController:
         self._lane_half_width = 160.0
         self.last_mask_white  = None
         self.last_mask_yellow = None
-        self.last_error       = 0.0 ,
+        self.last_error       = 0.0   # FIX: removed stray trailing comma
 
     def reset(self):
         self.prev_error       = 0.0
@@ -223,13 +274,19 @@ class LaneFollowingController:
             yellow_count  = len(yellow_pixels[1])
             white_count   = len(white_pixels[1])
 
-            dynamic_ratio_threshold = min(1.3 + (yellow_count / 2000.0), 1.8)
+            # Reject white only when it is clearly a false positive:
+            #   - the white blob is much larger than yellow AND centred left of
+            #     yellow (likely road noise, not the right-side line), OR
+            #   - the leftmost white pixel is past the image centre, meaning the
+            #     blob is entirely on the wrong side of the frame.
+            # The original four-condition OR was too aggressive and discarded
+            # real white-line detections, leaving the robot steered only by
+            # yellow — which biases it rightward until it crosses the white line.
+            dynamic_ratio_threshold = min(1.5 + (yellow_count / 2000.0), 2.2)
             ratio_bad    = white_count > yellow_count * dynamic_ratio_threshold
-            span_bad     = white_span_x > w * 0.25
-            position_bad = white_mean_x < yellow_mean_x + (w * 0.15)
-            apex_bad     = int(white_pixels[1].min()) > w * 0.55
+            position_bad = white_mean_x < yellow_mean_x  # white blob left of yellow = wrong side
 
-            if ratio_bad or span_bad or position_bad or apex_bad:
+            if ratio_bad and position_bad:
                 has_white = False
 
         error = self.prev_error
@@ -237,6 +294,16 @@ class LaneFollowingController:
         if has_yellow and has_white:
             lane_center = (np.mean(yellow_pixels[1]) + np.mean(white_pixels[1])) / 2.0
             error       = (w / 2.0 - lane_center) / (w / 2.0)
+
+            # Safety override: if white mean is very close to or left of centre
+            # the robot is already crossing the white line — steer hard left.
+            white_mean_x = np.mean(white_pixels[1])
+            if white_mean_x < w * 0.55:
+                # White line is too far left — we are over it; apply direct
+                # correction proportional to how far over we are.
+                over_fraction = (w * 0.55 - white_mean_x) / (w * 0.55)
+                error = float(np.clip(error - 0.4 * over_fraction, -1.0, 1.0))
+
         elif has_yellow:
             yellow_x = np.mean(yellow_pixels[1])
             yellow_y = np.mean(yellow_pixels[0])
@@ -299,6 +366,7 @@ def get_direction_from_route(current_node, goal_node, route_path):
 
     next_node = route_path[idx + 1]
 
+    # Try edge 'direction' attribute first (works when scene provides it)
     try:
         for neighbor_id, length, edge_id in road_map.neighbors(current_node):
             if neighbor_id == next_node:
@@ -310,6 +378,7 @@ def get_direction_from_route(current_node, goal_node, route_path):
     except Exception as e:
         print(f"[Direction] edge lookup error: {e}")
 
+    # Fallback: derive turn from heading vector vs node-coordinate delta
     try:
         cn = road_map.get_node(current_node)
         nn = road_map.get_node(next_node)
@@ -564,7 +633,6 @@ class NavigationAgent:
             if obj_stop:
                 print(f"[Agent] Object detected — stopping: {obj_reason}")
                 wheels.set_wheels_speed(0.0, 0.0)
-                # Update debug frame so the box is visible while stopped
                 if frame_bgr is not None:
                     debug_frame = build_debug_frame(
                         raw_bgr     = frame_bgr,
@@ -654,18 +722,12 @@ def main(camera, wheels, leds, stop_event, server_module=None):
             start = server.current_node
             goal  = server.goal_node
 
-            if hasattr(camera, 'read_rgb'):
-                ok, frame_rgb = camera.read_rgb()
-            else:
-                ok, frame_rgb = camera.read()
-                if ok and frame_rgb is not None:
-                    frame_rgb = cv2.cvtColor(frame_rgb, cv2.COLOR_BGR2RGB)
-
-            if not ok or frame_rgb is None:
+            # FIX: normalise camera read to BGR regardless of camera API
+            frame_bgr = _read_bgr(camera)
+            if frame_bgr is None:
                 time.sleep(0.02)
                 continue
 
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
             should_continue = agent.update(
                 frame_bgr, camera, wheels, leds, start, goal
             )
@@ -719,3 +781,31 @@ def main(camera, wheels, leds, stop_event, server_module=None):
             except Exception:
                 pass
         print("[Agent] Stopped")
+
+
+# ============================================================================
+# CAMERA HELPER — unified BGR frame from any camera driver
+# ============================================================================
+
+def _read_bgr(camera):
+    """
+    Return a BGR uint8 frame regardless of whether the camera driver exposes
+    read_rgb() (Godot / real CameraDriver) or read() (legacy BGR).
+
+    Returns None on failure.
+    """
+    if camera is None:
+        return None
+
+    # Prefer read_rgb — both GodotCameraDriver and real CameraDriver implement it
+    if hasattr(camera, 'read_rgb'):
+        ok, frame_rgb = camera.read_rgb()
+        if ok and frame_rgb is not None:
+            return cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        return None
+
+    # Legacy fallback (returns BGR directly)
+    ok, frame = camera.read()
+    if ok and frame is not None:
+        return frame
+    return None

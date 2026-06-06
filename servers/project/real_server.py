@@ -18,7 +18,7 @@ from duckiebot.wheel_driver import DaguWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.led_driver import LEDDriver
 from launcher.ports import find_available_port
-from servers.common import shutdown_cleanup, suppress_http_logs
+from servers.common import shutdown_cleanup, suppress_http_logs, make_frame_generator
 from servers.templates.project import get_template as HTML_TEMPLATE
 from tasks.project.packages.optimal_path import dijkstra
 
@@ -37,6 +37,25 @@ keys_pressed = {'up': False, 'down': False, 'left': False, 'right': False}
 keys_lock    = threading.Lock()
 _keys_last_update = time.time()
 current_speeds = {'left': 0.0, 'right': 0.0}
+
+# ── Motor trim ────────────────────────────────────────────────────────────────
+# Right motor is weaker, so we boost it relative to left.
+# Positive = boost right, negative = boost left.  Start at 0.05, tune via
+# POST /set_trim {"trim": 0.10} while driving straight in manual mode.
+_trim = 0.05
+
+
+def _set_wheels(left: float, right: float):
+    """Apply trim correction then forward to the real wheel driver."""
+    global current_speeds
+    if wheels is None:
+        return
+    # Multiplicative trim keeps the effect proportional at all speeds.
+    r_trimmed = float(np.clip(right * (1.0 + _trim), -1.0, 1.0))
+    current_speeds['left']  = left
+    current_speeds['right'] = right   # store un-trimmed for status display
+    wheels.set_wheels_speed(left, r_trimmed)
+
 
 _DANCE_COLORS = [
     [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
@@ -63,11 +82,11 @@ def dance(duration_sec, stop_ev):
     duration = float(np.clip(duration_sec, 0.5, 10.0))
 
     if wheels:
-        wheels.set_wheels_speed(0.8, -0.8)
+        _set_wheels(0.8, -0.8)
         time.sleep(0.6)
-        wheels.set_wheels_speed(0.8, 0.8)
+        _set_wheels(0.8, 0.8)
         time.sleep(1.0)
-        wheels.set_wheels_speed(0.0, 0.0)
+        _set_wheels(0.0, 0.0)
         time.sleep(0.1)
 
     end_time = time.time() + duration
@@ -78,7 +97,7 @@ def dance(duration_sec, stop_ev):
         else:
             left, right = -0.8, 0.8
         if wheels:
-            wheels.set_wheels_speed(left, right)
+            _set_wheels(left, right)
         if leds:
             try:
                 color = _DANCE_COLORS[step % len(_DANCE_COLORS)]
@@ -89,39 +108,34 @@ def dance(duration_sec, stop_ev):
         step += 1
 
     if wheels:
-        wheels.set_wheels_speed(0.0, 0.0)
+        _set_wheels(0.0, 0.0)
     print("[Dance] Done")
 
 
+# ── Video stream ──────────────────────────────────────────────────────────────
+
+def _visualize_frame(frame_bgr):
+    """
+    Called by make_frame_generator for every camera frame (BGR from read()).
+    - During navigation: return the agent debug overlay (also BGR).
+    - Otherwise:        return the raw BGR frame directly.
+    """
+    import tasks.project.packages.agent as agent_mod
+    if agent_mod.debug_frame is not None:
+        return agent_mod.debug_frame
+    return frame_bgr
 
 
+# rgb=False -> make_frame_generator calls cam.read() which returns BGR directly.
+generate_frames = make_frame_generator(
+    get_camera=lambda: camera,
+    visualize=_visualize_frame,
+    quality=70,
+    rgb=False,
+)
 
-def generate_frames():
-    import tasks.project.packages.agent as agent
-    while True:
-        try:
-            if agent.debug_frame is not None:
-                display = agent.debug_frame
-            else:
-                if camera is None:
-                    display = None
-                else:
-                    ok, frame = camera.read()
-                    display = frame if (ok and frame is not None) else None
 
-            if display is None:
-                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(placeholder, "Waiting for camera...", (160, 240),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (80, 80, 80), 2)
-                display = placeholder
-
-            ret, jpeg = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            if ret:
-                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
-                       + jpeg.tobytes() + b'\r\n')
-        except Exception as e:
-            print(f"[VideoStream] Error: {e}")
-        time.sleep(0.033)
+# ── Navigation thread helpers ─────────────────────────────────────────────────
 
 def start_navigation():
     global _navigation_thread, _navigation_stop
@@ -155,6 +169,8 @@ def stop_navigation():
     _navigation_thread.join(timeout=2.0)
     print("[Navigation] Navigation stopped")
 
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -214,7 +230,7 @@ def update_keys():
     current_speeds['right'] = r
 
     if _manual_mode and wheels:
-        wheels.set_wheels_speed(l, r)
+        _set_wheels(l, r)
 
     return jsonify({'status': 'ok', 'left': l, 'right': r})
 
@@ -227,7 +243,7 @@ def set_mode():
         print("[Mode] Manual Drive - stopping navigation")
         stop_navigation()
         if wheels:
-            wheels.set_wheels_speed(0.0, 0.0)
+            _set_wheels(0.0, 0.0)
     else:
         print("[Mode] Autonomous Navigation - starting agent")
         start_navigation()
@@ -245,10 +261,12 @@ def set_start():
 def get_start():
     return jsonify({'node': current_node})
 
+
 @app.route('/get_hsv')
 def get_hsv():
     from tasks.visual_lane_servoing.packages.visual_servoing_activity import get_hsv_bounds
     return jsonify(get_hsv_bounds())
+
 
 @app.route('/update_hsv', methods=['POST'])
 def update_hsv():
@@ -263,6 +281,25 @@ def update_hsv():
         [current['white_upper_h'],  current['white_upper_s'],  current['white_upper_v']],
     )
     return jsonify({'status': 'ok', 'new_values': get_hsv_bounds()})
+
+
+# ── Red-line HSV calibration endpoints ───────────────────────────────────────
+
+@app.route('/get_red_hsv')
+def get_red_hsv():
+    from tasks.project.packages.agent import get_red_hsv as _get
+    return jsonify(_get())
+
+
+@app.route('/update_red_hsv', methods=['POST'])
+def update_red_hsv():
+    from tasks.project.packages.agent import get_red_hsv as _get, set_red_hsv as _set
+    _set(request.json)
+    return jsonify({'status': 'ok', 'new_values': _get()})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.route('/set_goal', methods=['POST'])
 def set_goal():
     global goal_node
@@ -304,6 +341,20 @@ def run_maneuver():
         return jsonify({'status': 'ok', 'maneuver': 'dance', 'distance': distance})
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
+
+
+@app.route('/get_trim')
+def get_trim():
+    return jsonify({'trim': _trim})
+
+
+@app.route('/set_trim', methods=['POST'])
+def set_trim():
+    global _trim
+    val = float(request.json.get('trim', _trim))
+    _trim = float(np.clip(val, -0.3, 0.3))
+    print(f"[Trim] set to {_trim:+.3f}")
+    return jsonify({'status': 'ok', 'trim': _trim})
 
 
 @app.route('/speeds')
@@ -370,7 +421,7 @@ def main():
     try:
         _manual_mode = True
         if wheels:
-            wheels.set_wheels_speed(0.0, 0.0)
+            _set_wheels(0.0, 0.0)
         print("[Mode] Starting in Manual mode")
         app.run(host='0.0.0.0', port=web_port, debug=False, threaded=True)
     except (KeyboardInterrupt, SystemExit):
