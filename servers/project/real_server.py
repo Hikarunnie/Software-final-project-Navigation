@@ -174,24 +174,34 @@ def generate_frames():
 
 def start_navigation():
     global _navigation_thread, _navigation_stop
-    import tasks.project.packages.agent as agent
-
-    if _navigation_thread and _navigation_thread.is_alive():
-        print("[Navigation] Already running")
+    try:
+        import tasks.project.packages.agent as agent
+    except Exception as e:
+        print(f"[Navigation] Failed to import agent: {e}", flush=True)
         return
-
-    print("[Navigation] Starting navigation loop...")
+    if _navigation_thread and _navigation_thread.is_alive():
+        print("[Navigation] Already running", flush=True)
+        return
+    # Capture node values NOW before any other thread changes them
+    _start = current_node
+    _goal  = goal_node
     _navigation_stop.clear()
     import servers.project.real_server as _self
-    _navigation_thread = threading.Thread(
-        target=agent.main,
-        args=(camera, wheels, leds, _navigation_stop, _self),
-        daemon=True,
-        name='NavigationThread'
-    )
+    # Set them explicitly so agent reads correct values
+    _self.current_node = _start
+    _self.goal_node    = _goal
+    print(f"[Navigation] Starting — current_node={_start} goal_node={_goal} (self id={id(_self)})", flush=True)
+
+    def _run():
+        try:
+            agent.main(camera, wheels, leds, _navigation_stop, _self)
+        except Exception as e:
+            import traceback
+            print(f"[Navigation] CRASHED: {e}", flush=True)
+            traceback.print_exc()
+
+    _navigation_thread = threading.Thread(target=_run, daemon=True, name='NavigationThread')
     _navigation_thread.start()
-
-
 def stop_navigation():
     global _navigation_thread, _navigation_stop
 

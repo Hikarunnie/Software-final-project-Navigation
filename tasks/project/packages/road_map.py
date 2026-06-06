@@ -32,13 +32,12 @@ class RoadMap:
             3: {"id": 3, "x": 2.1, "y": 4.5},
         }
         self.edges = {
-            "1-3-a": {"from": 1, "to": 3, "length": 13},
-            "1-2-a": {"from": 1, "to": 2, "length": 7},
-            "1-3-b": {"from": 1, "to": 3, "length": 5},
-            "2-3-a": {"from": 2, "to": 3, "length": 2},
-            "2-3-b": {"from": 2, "to": 3, "length": 10},
+            "1-3-a": {"from": 1, "to": 3, "length": 13, "direction": "left", "reverse_direction": "right"},
+            "1-2-a": {"from": 1, "to": 2, "length": 7, "direction": "forward", "reverse_direction": "right"},
+            "1-3-b": {"from": 1, "to": 3, "length": 5, "direction": "left", "reverse_direction": "right"},
+            "2-3-a": {"from": 2, "to": 3, "length": 2, "direction": "forward", "reverse_direction": "forward"},
+            "2-3-b": {"from": 2, "to": 3, "length": 10, "direction": "forward", "reverse_direction": "forward"},
         }
-
     def neighbors(self, node_id):
         """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""
         result = []

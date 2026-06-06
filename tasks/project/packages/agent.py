@@ -7,23 +7,29 @@ from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
 
+import sys
+
 server      = None
 debug_frame = None
 agent       = None
+
+def _log(msg):
+    print(msg, flush=True)
+    sys.stdout.flush()
 
 # ============================================================================
 # TUNING CONSTANTS — edit these to tune the robot
 # ============================================================================
 
-CREEP_SPEED        = 0.06   # speed while creeping over red line
-FORWARD_CLEAR_TIME = 0.55   # seconds to creep forward before turning
+CREEP_SPEED        = 0.3   # speed while creeping over red line
+FORWARD_CLEAR_TIME = 3   # seconds to creep forward before turning
 TURN_SPEED         = 0.20   # rotation speed during turn
-EXIT_SPEED         = 0.08   # speed after turn while searching for lane
-EXIT_TIME          = 5 # seconds to drive forward after turn
+EXIT_SPEED         = 0.2  # speed after turn while searching for lane
+EXIT_TIME          = 3 # seconds to drive forward after turn
 
-TURN_TIME_FORWARD  = 0.22   # seconds for forward crossing
-TURN_TIME_LEFT     = 0.5   # seconds to rotate left — tune this
-TURN_TIME_RIGHT    = 1.2    # seconds to rotate right — tune this
+TURN_TIME_FORWARD  = 3   # seconds for forward crossing
+TURN_TIME_LEFT     = 0.8   # seconds to rotate left — tune this
+TURN_TIME_RIGHT    = 1    # seconds to rotate right — tune this
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,
@@ -33,7 +39,7 @@ TURN_TIMES = {
 
 RED_WINDOW_SIZE = 12
 RED_VOTE_THRESH = 0.65
-RED_ARM_FRAMES  = 32
+RED_ARM_FRAMES  = 20
 
 # ============================================================================
 # RED LINE DETECTION
@@ -135,53 +141,34 @@ def update_heading(direction):
         _heading = [-hy, hx]
     print(f"[Heading] after '{direction}': {_heading}")
 
-def get_direction_from_route(current_node, goal_node, route_path):
-    if not route_path or len(route_path) < 2:
+def get_direction_from_route(current_node, goal_node, route):
+    if not route:
+        return "forward"
+    path  = route.get('path', [])
+    edges = route.get('edges', [])
+    if len(path) < 2:
         return "forward"
     try:
-        idx = route_path.index(current_node)
+        idx = path.index(current_node)
     except ValueError:
         return "forward"
-    if idx >= len(route_path) - 1:
+    if idx >= len(path) - 1:
         return "forward"
-    next_node = route_path[idx + 1]
+    next_node = path[idx + 1]
+    if idx >= len(edges):
+        return "forward"
 
-    # Try edge direction attribute (Godot simulation provides this)
-    try:
-        for neighbor_id, length, edge_id in road_map.neighbors(current_node):
-            if neighbor_id == next_node:
-                edge_data = road_map.get_edge(edge_id)
-                if edge_data and 'direction' in edge_data:
-                    d = edge_data['direction']
-                    print(f"[Direction] edge {current_node}->{next_node}: '{d}'")
-                    return d
-    except Exception as e:
-        print(f"[Direction] edge lookup error: {e}")
+    edge_id   = edges[idx]
+    edge_data = road_map.get_edge(edge_id)
+    if edge_data:
+        if edge_data.get('from') == current_node:
+            d = edge_data.get('direction', 'forward')
+        else:
+            d = edge_data.get('reverse_direction', 'forward')
+        _log(f"[Direction] edge {edge_id} {current_node}->{next_node}: '{d}'")
+        return d
 
-    # Coordinate + heading fallback
-    try:
-        cn = road_map.get_node(current_node)
-        nn = road_map.get_node(next_node)
-        if cn and nn:
-            dx, dy = nn['x'] - cn['x'], nn['y'] - cn['y']
-            mag = (dx**2 + dy**2)**0.5
-            if mag < 1e-6:
-                return "forward"
-            nx, ny = dx / mag, dy / mag
-            hx, hy = _heading
-            forward_comp = nx * hx + ny * hy
-            lateral_comp = nx * hy - ny * hx
-            if abs(lateral_comp) < abs(forward_comp) * 0.58:
-                d = "forward"
-            elif lateral_comp > 0:
-                d = "right"
-            else:
-                d = "left"
-            print(f"[Direction] heading {current_node}->{next_node}: '{d}'")
-            return d
-    except Exception as e:
-        print(f"[Direction] coord error: {e}")
-
+    print(f"[Direction] edge {edge_id} not found, defaulting forward")
     return "forward"
 
 # ============================================================================
@@ -206,7 +193,7 @@ class IntersectionFSM:
     def start(self, direction):
         self._direction = direction
         self._enter_phase("clear")
-        print(f"[Intersection] Starting — direction='{direction}'")
+        _log(f"[Intersection] Starting — direction='{direction}'")
 
     def _enter_phase(self, phase):
         self._phase = phase
@@ -264,14 +251,14 @@ class NavigationAgent:
         self.lane_follower._WHITE_TARGET  = 0.72
         self.intersection_fsm = IntersectionFSM()
         self.state            = "driving"
-        self.current_route    = None
+        self.current_route = None
         self._red_window      = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames  = 0
         self._route_initialized = False
         _reset_heading()
 
     def reset(self):
-        print("[Agent] Resetting")
+        _log("[Agent] Resetting")
         self.lane_follower._prev_error     = 0.0
         self.lane_follower._filtered_error = 0.0
         self.intersection_fsm.reset()
@@ -283,7 +270,7 @@ class NavigationAgent:
         _reset_heading()
 
     def _transition(self, new_state):
-        print(f"[Agent] {self.state} → {new_state}")
+        _log(f"[Agent] {self.state} → {new_state}")
         self.state = new_state
 
     def _advance_node(self):
@@ -297,7 +284,7 @@ class NavigationAgent:
             return
         if idx + 1 < len(path):
             server.current_node = path[idx + 1]
-            print(f"[Agent] Node advanced: {current} → {server.current_node}")
+            _log(f"[Agent] Node advanced: {current} → {server.current_node}")
 
     def _red_vote(self, detected):
         self._red_window.append(1 if detected else 0)
@@ -327,8 +314,9 @@ class NavigationAgent:
             if not still_running:
                 update_heading(self.intersection_fsm._direction)
                 self._advance_node()
-                self.current_route   = None
-                self._driving_frames = 0
+                self.current_route      = None
+                self._route_initialized = False
+                self._driving_frames    = 0
                 self._red_window.clear()
                 self.lane_follower._prev_error     = 0.0
                 self.lane_follower._filtered_error = 0.0
@@ -366,20 +354,20 @@ class NavigationAgent:
                     self._driving_frames = 0
 
                     if not self._route_initialized:
-                        print(f"[Agent] First red line at node {current_node}")
-                        server.current_node = current_node
-                        self.current_route  = dijkstra(current_node, goal_node)
-                        self.current_route['start'] = current_node
-                        print(f"[Agent] Route: {self.current_route['path']}")
+                        _log(f"[Agent] First red line at node {server.current_node}")
+                        self.current_route = dijkstra(server.current_node, goal_node)
+                        self.current_route['start'] = server.current_node
+                        _log(f"[Agent] Route: {self.current_route['path']}")
+                        _log(f"[Agent] Edges: {self.current_route['edges']}")
                         self._route_initialized = True
 
-                    if current_node == goal_node:
+                    if server.current_node == goal_node:
                         self._transition("completed")
                         return False
 
-                    print("[Agent] Red line confirmed — crossing")
-                    route_path = self.current_route.get('path', []) if self.current_route else []
-                    direction  = get_direction_from_route(current_node, goal_node, route_path)
+                    print(
+                        f"[Agent] Red line confirmed — crossing | node={server.current_node} route={self.current_route.get('path') if self.current_route else None}")
+                    direction = get_direction_from_route(server.current_node, goal_node, self.current_route)
                     self.intersection_fsm.start(direction)
                     self._transition("crossing")
 
@@ -414,8 +402,8 @@ def main(camera, wheels, leds, stop_event, server_module=None):
     agent.reset()
     debug_frame = None
 
-    print("[Agent] Started")
-    print(f"[Agent] Start: {server.current_node}  Goal: {server.goal_node}")
+    _log(f"[Agent] Started — Start: {server.current_node}  Goal: {server.goal_node}")
+    _log(f"[Agent] (server id={id(server)}, current_node attr={server.current_node})")
 
     try:
         while not stop_event.is_set():
@@ -439,7 +427,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
             should_continue = agent.update(frame_bgr, wheels, leds, start, goal)
 
             if not should_continue:
-                print("[Agent] Route complete — dancing")
+                _log("[Agent] Route complete — dancing")
                 if wheels:
                     wheels.set_wheels_speed(0.0, 0.0)
                 time.sleep(2.0)
@@ -482,4 +470,4 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                 leds.all_off()
             except Exception:
                 pass
-        print("[Agent] Stopped")
+        _log("[Agent] Stopped")
