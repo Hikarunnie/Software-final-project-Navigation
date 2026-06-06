@@ -207,10 +207,24 @@ def stop_navigation():
 
 @app.route('/')
 def index():
-    return HTML_TEMPLATE(
+    base = HTML_TEMPLATE(
         title="Navigation — Project",
         subtitle="Real Duckiebot",
     )
+    # Inject lane control card CSS + JS
+    extra = """<style>
+.lane-slider-group{margin-bottom:10px}
+.lane-slider-row{display:flex;align-items:center;gap:10px}
+.lane-slider-row label{min-width:90px;font-size:13px;color:var(--text-secondary)}
+.lane-slider-row input[type=range]{flex:1}
+.lane-slider-row span{min-width:42px;font-size:13px;font-family:monospace;color:var(--text-primary);text-align:right}
+</style>
+<script>
+function injectLaneCard(){const e=[...document.querySelectorAll('.card')].find(c=>c.querySelector('.card-header')?.textContent?.includes('Dance'));if(!e)return;const d=document.createElement('div');d.className='card';d.innerHTML=`<div class="card-header">Lane Control</div><div class="lane-slider-group"><div class="lane-slider-row"><label>P Gain</label><input type="range" id="lc-p" min="0" max="2" step="0.05" value="0.6" oninput="document.getElementById('lc-p-v').textContent=parseFloat(this.value).toFixed(2);applyLaneConfig()"><span id="lc-p-v">0.60</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>D Gain</label><input type="range" id="lc-d" min="0" max="3" step="0.05" value="0.8" oninput="document.getElementById('lc-d-v').textContent=parseFloat(this.value).toFixed(2);applyLaneConfig()"><span id="lc-d-v">0.80</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Base Speed</label><input type="range" id="lc-s" min="0.02" max="0.4" step="0.01" value="0.08" oninput="document.getElementById('lc-s-v').textContent=parseFloat(this.value).toFixed(2);applyLaneConfig()"><span id="lc-s-v">0.08</span></div></div><div id="lc-status" class="status"></div>`;e.parentNode.insertBefore(d,e);fetch('/get_lane_config').then(r=>r.json()).then(d=>{document.getElementById('lc-p').value=d.p_gain;document.getElementById('lc-p-v').textContent=d.p_gain.toFixed(2);document.getElementById('lc-d').value=d.d_gain;document.getElementById('lc-d-v').textContent=d.d_gain.toFixed(2);document.getElementById('lc-s').value=d.base_speed;document.getElementById('lc-s-v').textContent=d.base_speed.toFixed(2)}).catch(()=>{})}
+function applyLaneConfig(){const p=parseFloat(document.getElementById('lc-p').value),d=parseFloat(document.getElementById('lc-d').value),s=parseFloat(document.getElementById('lc-s').value);postJSON('/set_lane_config',{p_gain:p,d_gain:d,base_speed:s}).then(()=>showStatus('lc-status','Applied!','success')).catch(()=>showStatus('lc-status','Error','error'))}
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',injectLaneCard):injectLaneCard();
+</script>"""
+    return base.replace('</body>', extra + '</body>')
 
 
 @app.route('/video')
@@ -354,6 +368,30 @@ def run_maneuver():
 
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
+
+
+
+@app.route('/get_lane_config')
+def get_lane_config():
+    import tasks.project.packages.agent as _ag
+    lf = _ag.agent.lane_follower
+    return jsonify({
+        'p_gain':     lf.p_gain,
+        'd_gain':     lf.d_gain,
+        'base_speed': lf.base_speed,
+    })
+
+
+@app.route('/set_lane_config', methods=['POST'])
+def set_lane_config():
+    import tasks.project.packages.agent as _ag
+    data = request.json
+    lf = _ag.agent.lane_follower
+    if 'p_gain'     in data: lf.p_gain     = float(data['p_gain'])
+    if 'd_gain'     in data: lf.d_gain     = float(data['d_gain'])
+    if 'base_speed' in data: lf.base_speed = float(data['base_speed'])
+    print(f"[LaneConfig] p={lf.p_gain} d={lf.d_gain} speed={lf.base_speed}")
+    return jsonify({'status': 'ok', 'p_gain': lf.p_gain, 'd_gain': lf.d_gain, 'base_speed': lf.base_speed})
 
 @app.route('/speeds')
 def get_speeds():
