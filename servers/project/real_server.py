@@ -96,23 +96,72 @@ def dance(duration_sec, stop_ev):
 
 
 
-def generate_frames():
-    import tasks.project.packages.agent as agent
+# ── Background overlay thread ────────────────────────────────────────────────
+# Runs detection in a separate thread so generate_frames() never blocks.
+_overlay_frame = [None]
+_overlay_lock  = threading.Lock()
+
+def _overlay_loop():
+    import tasks.project.packages.agent as agent_mod
     while True:
         try:
-            if agent.debug_frame is not None:
-                display = agent.debug_frame
-            else:
-                if camera is None:
-                    display = None
-                else:
-                    ok, frame = camera.read()
-                    display = frame if (ok and frame is not None) else None
+            # Navigation: use agent debug frame
+            if agent_mod.debug_frame is not None:
+                with _overlay_lock:
+                    _overlay_frame[0] = agent_mod.debug_frame
+                time.sleep(0.033)
+                continue
+
+            # Manual: read camera and run detection
+            if camera is None:
+                time.sleep(0.05)
+                continue
+
+            ok, frame = camera.read()
+            if not ok or frame is None:
+                time.sleep(0.033)
+                continue
+
+            if len(frame.shape) == 3 and frame.shape[2] == 4:
+                frame = frame[:, :, :3]
+
+            try:
+                from tasks.visual_lane_servoing.packages.visual_servoing_activity import detect_lane_markings
+                from tasks.project.packages.agent import build_debug_frame
+                mask_y_f, mask_w_f = detect_lane_markings(frame)
+                display = build_debug_frame(
+                    raw_bgr     = frame,
+                    mask_yellow = (mask_y_f * 255).astype(np.uint8),
+                    mask_white  = (mask_w_f * 255).astype(np.uint8),
+                    mask_red    = None,
+                    state       = "manual",
+                    sub         = None,
+                    error       = 0.0,
+                )
+            except Exception:
+                display = frame
+
+            with _overlay_lock:
+                _overlay_frame[0] = display
+
+        except Exception:
+            time.sleep(0.05)
+
+threading.Thread(target=_overlay_loop, daemon=True).start()
+
+
+def generate_frames():
+    placeholder = None
+    while True:
+        try:
+            with _overlay_lock:
+                display = _overlay_frame[0]
 
             if display is None:
-                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(placeholder, "Waiting for camera...", (160, 240),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (80, 80, 80), 2)
+                if placeholder is None:
+                    placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(placeholder, "Waiting for camera...", (160, 240),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (80, 80, 80), 2)
                 display = placeholder
 
             ret, jpeg = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -343,9 +392,35 @@ def main():
     print('  Wheels: ok')
 
     print('\n[3/4] Initializing camera driver...')
-    camera = CameraDriver()
-    camera.start()
-    print('  Camera: ok')
+    import subprocess
+    print('  Restarting nvargus-daemon...')
+    try:
+        subprocess.run(['sudo', 'systemctl', 'restart', 'nvargus-daemon'],
+                       timeout=10, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(3.0)
+    except Exception as e:
+        print(f'  nvargus-daemon restart failed: {e}')
+    for _attempt in range(5):
+        try:
+            camera = CameraDriver()
+            camera.start()
+            print('  Camera: ok')
+            break
+        except Exception as e:
+            print(f'  Camera attempt {_attempt+1}/5 failed: {e}')
+            try: camera.stop()
+            except Exception: pass
+            camera = None
+            if _attempt < 4:
+                try:
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'nvargus-daemon'],
+                                   timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    time.sleep(3.0)
+                except Exception:
+                    time.sleep(2.0)
+    if camera is None:
+        print('  WARNING: Camera failed to start')
 
     print('\n[4/4] Ready — use the UI to start navigation')
 

@@ -25,7 +25,9 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     Yellow = left dashed centre line  → only searched in LEFT 60 % of frame.
     White  = right solid edge line    → only searched in RIGHT 65 % of frame.
 
-    Pipeline: blur → HSV colour → spatial crop → edge AND → morphology cleanup.
+    The white line appears as two parallel edge strokes (left and right border
+    of the painted line). A vertical closing kernel (height=15) bridges the gap
+    between the two strokes, filling the line into one solid region.
     """
     h, w = image.shape[:2]
 
@@ -42,33 +44,40 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     yellow_colour = cv2.inRange(hsv, _yellow_lower, _yellow_upper)
     white_colour  = cv2.inRange(hsv, _white_lower,  _white_upper)
 
-    # 4. Canny edge mask on the V (brightness) channel — painted lines have
-    #    sharp edges; flat floors/walls/reflections do not.
+    # 4. Canny edge mask on the V (brightness) channel
     v_blur = cv2.GaussianBlur(hsv[:, :, 2], (3, 3), 1.0)
     edges  = cv2.Canny(v_blur, 25, 70)
     k_edge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    edges  = cv2.dilate(edges, k_edge)   # widen so colour blob overlaps edge
+    edges  = cv2.dilate(edges, k_edge)
 
-    # 5. Combine: pixel must be BOTH the right colour AND on an edge
+    # 5. Yellow needs edge AND colour (avoids floor noise).
+    #    White uses colour mask ONLY — no edge AND — so the full solid area
+    #    is detected, not just the two outline strokes.
     yellow_mask = cv2.bitwise_and(yellow_colour, edges)
-    white_mask  = cv2.bitwise_and(white_colour,  edges)
+    white_mask  = white_colour.copy()
 
-    # 6. Hard spatial split —————————————————————————————————————————————
-    #    Yellow centre line is always on the LEFT side of the robot's view.
-    #    Block right 40 % so reflections / white line never read as yellow.
+    # 6. Hard spatial split
     yellow_mask[:, int(rw * 0.60):] = 0
-
-    #    White edge line is always on the RIGHT side.
-    #    Block left 35 % so yellow line / left wall never read as white.
     white_mask[:, :int(rw * 0.35)] = 0
 
-    # 7. Morphological cleanup: open kills noise, close fills dashed-line gaps
+    # 7. Morphological cleanup
     k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     k7 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+
+    # Yellow: small open + close for dashes
     yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN,  k3)
     yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, k7)
-    white_mask  = cv2.morphologyEx(white_mask,  cv2.MORPH_OPEN,  k3)
-    white_mask  = cv2.morphologyEx(white_mask,  cv2.MORPH_CLOSE, k7)
+
+    # White: open to kill noise, close to fill any remaining gaps
+    white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN,  k3)
+    white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, k7)
+
+    # Black out everything above the topmost white pixel — the floor appears
+    # further up in the frame than the actual white line marking.
+    rows = np.where(white_mask > 0)[0]
+    if len(rows) > 0:
+        white_top_row = int(rows.min())
+        white_mask[:white_top_row, :] = 0
 
     # 8. Embed ROI back into full-frame arrays
     full_yellow = np.zeros((h, w), dtype=np.uint8)
