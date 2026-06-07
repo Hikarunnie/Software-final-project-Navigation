@@ -8,6 +8,14 @@ from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
 
+try:
+    from tasks.object_detection.packages.agent import ObjectDetectionAgent
+    from tasks.object_detection.packages.stop_activity import should_stop
+    _DETECTION_AVAILABLE = True
+except ImportError as e:
+    print(f"[Agent] Object detection not available: {e}", flush=True)
+    _DETECTION_AVAILABLE = False
+
 server      = None
 debug_frame = None
 agent       = None
@@ -75,6 +83,10 @@ RED_VOTE_THRESH = 0.65
 RED_ARM_FRAMES  = 18   # frames to drive before red line detection is armed
 RED_REARM_FRAMES = 45  # frames to ignore red lines after finishing a crossing
                        # (prevents triggering on the same intersection's other lines)
+CLASS_NAMES  = {0: 'duckie', 1: 'truck', 2: 'sign'}
+CLASS_COLORS = {0: (0, 215, 255), 1: (180, 100, 220), 2: (50, 205, 50)}
+
+
 
 # ============================================================================
 # RED LINE DETECTION
@@ -123,12 +135,23 @@ def detect_red_line(image):
 # DEBUG FRAME
 # ============================================================================
 
-def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, error):
+def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, error, detections=None):
     if raw_bgr is None:
         return None
     h, w = raw_bgr.shape[:2]
     panel_w, panel_h = w // 2, h // 3
     raw = raw_bgr.copy()
+
+    if detections:
+        for (x1, y1, x2, y2), score, cls_id in detections:
+            color = CLASS_COLORS.get(cls_id, (255, 255, 255))
+            cv2.rectangle(raw, (x1, y1), (x2, y2), color, 2)
+            label_txt = f"{CLASS_NAMES.get(cls_id, '?')} {score:.2f}"
+            cv2.putText(raw, label_txt, (x1, max(y1 - 6, 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+            
+
+
     label = state.upper() + (f"/{sub}" if sub else "")
     cv2.putText(raw, label, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
     try:
@@ -319,6 +342,16 @@ class NavigationAgent:
         self._red_window      = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames  = 0
         self._route_initialized = False
+        self.last_detections = []
+        if _DETECTION_AVAILABLE:
+            try:
+                self.detector = ObjectDetectionAgent()
+                print("[Agent] Object detector loaded", flush=True)
+            except Exception as e:
+                    print(f"[Agent] Object detector failed to load: {e}", flush=True)
+                    self.detector = None
+        else:
+            self.detector = None
         _reset_heading()
 
     def reset(self):
@@ -331,6 +364,7 @@ class NavigationAgent:
         self._red_window        = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames    = 0
         self._route_initialized = False
+        self.last_detections = []
         _reset_heading()
 
     def _transition(self, new_state):
@@ -355,6 +389,20 @@ class NavigationAgent:
         if len(self._red_window) < RED_WINDOW_SIZE:
             return False
         return (sum(self._red_window) / RED_WINDOW_SIZE) >= RED_VOTE_THRESH
+    def _run_detection(self, frame_bgr):
+        if self.detector is None or frame_bgr is None:
+           return False, ''
+        try:
+            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            detections = self.detector.detect(frame_rgb)
+            if detections is not None:
+               self.last_detections = detections
+            if self.last_detections:
+               h, w = frame_bgr.shape[:2]
+               return should_stop(self.last_detections, w)
+        except Exception as e:
+            print(f"[Agent] Detection error: {e}", flush=True)
+        return False, ''
 
     def update(self, frame_bgr, wheels, leds, current_node, goal_node):
         global debug_frame
@@ -389,13 +437,34 @@ class NavigationAgent:
             if frame_bgr is not None:
                 debug_frame = build_debug_frame(
                     frame_bgr, None, None, None,
-                    self.state, fsm_phase, 0.0)
+                    self.state, fsm_phase, 0.0, detections=self.last_detections)
             return True
 
         if self.state == "driving":
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             left, right = self.lane_follower.compute_commands(frame_rgb)
 
+            self._driving_frames += 1
+            armed = self._driving_frames >= RED_ARM_FRAMES
+
+            obj_stop, obj_reason = self._run_detection(frame_bgr)
+
+            if obj_stop:
+                print(f"[Agent] Object detected — stopping: {obj_reason}", flush=True)
+                wheels.set_wheels_speed(0.0, 0.0)
+
+                di = self.lane_follower.last_debug_info
+                debug_frame = build_debug_frame(
+                    raw_bgr     = frame_bgr,
+                    mask_yellow = di.get('yellow_mask') if di else None,
+                    mask_white  = di.get('white_mask') if di else None,
+                    mask_red    = red_mask,
+                    state       = self.state,
+                    sub         = "BLOCKED",
+                    error       = self.lane_follower._prev_error,
+                    detections  = self.last_detections,
+                )
+                return True
             di = self.lane_follower.last_debug_info
             no_lane = (di.get('total_lane_pixels', 0) < di.get('detection_threshold', 50)) \
                       if di else False
@@ -403,8 +472,6 @@ class NavigationAgent:
                 left  = EXIT_SPEED
                 right = EXIT_SPEED
 
-            self._driving_frames += 1
-            armed = self._driving_frames >= RED_ARM_FRAMES
 
             if not armed:
                 wheels.set_wheels_speed(left, right + MOTOR_BIAS)
@@ -447,12 +514,13 @@ class NavigationAgent:
             di = self.lane_follower.last_debug_info
             debug_frame = build_debug_frame(
                 raw_bgr     = frame_bgr,
-                mask_yellow = di.get('yellow_mask'),
-                mask_white  = di.get('white_mask'),
+                mask_yellow = di.get('yellow_mask') if di else None,
+                mask_white  = di.get('white_mask') if di else None,
                 mask_red    = red_mask,
                 state       = self.state,
                 sub         = fsm_phase,
                 error       = self.lane_follower._prev_error,
+                detections  = self.last_detections,
             )
         return True
 
