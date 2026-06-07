@@ -35,7 +35,7 @@ elif os.environ.get('DUCKIEBOT_SIM', '') == '1':
 print(f"[Agent] Running on: {'REAL ROBOT' if _IS_REAL else 'SIMULATION'}", flush=True)
 
 # ── Speeds ────────────────────────────────────────────────────────────────────
-
+MOTOR_BIAS = 0.05 if _IS_REAL else 0.0
 # Speed while slowly driving over the red stop line before turning
 CREEP_SPEED = 0.06  if not _IS_REAL else 0.2
 
@@ -43,22 +43,22 @@ CREEP_SPEED = 0.06  if not _IS_REAL else 0.2
 EXIT_SPEED  = 0.20  if not _IS_REAL else 0.2
 
 # Speed of each wheel during a left/right rotation at an intersection
-TURN_SPEED  = 0.20  if not _IS_REAL else 0.20
+TURN_SPEED  = 0.20  if not _IS_REAL else 0.15
 
 # ── Timings ───────────────────────────────────────────────────────────────────
 
 # How long (seconds) to creep forward over the red line before starting the turn
-FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 4.0
+FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 2.0
 
 # Maximum seconds to drive forward after a turn while searching for lane lines.
 # If lane is found earlier (300px detected), exits immediately.
 EXIT_TIMEOUT = 4.0  if not _IS_REAL else 4.0
 
 # Seconds to drive straight forward through a forward intersection (no turn)
-TURN_TIME_FORWARD = 2  if not _IS_REAL else 2
+TURN_TIME_FORWARD = 2  if not _IS_REAL else 1
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 0.8
+TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 1
 
 # Seconds to rotate right at an intersection
 TURN_TIME_RIGHT   = 0.15  if not _IS_REAL else 0.8
@@ -407,7 +407,7 @@ class NavigationAgent:
             armed = self._driving_frames >= RED_ARM_FRAMES
 
             if not armed:
-                wheels.set_wheels_speed(left, right)
+                wheels.set_wheels_speed(left, right + MOTOR_BIAS)
             else:
                 red_detected, red_mask = detect_red_line(frame_bgr)
                 confirmed = self._red_vote(red_detected)
@@ -417,7 +417,7 @@ class NavigationAgent:
                     speed_scale = max(0.0, 1.0 - vote_fraction)
                     wheels.set_wheels_speed(left * speed_scale, right * speed_scale)
                 else:
-                    wheels.set_wheels_speed(left, right)
+                    wheels.set_wheels_speed(left, right + MOTOR_BIAS)
 
                 if confirmed:
                     wheels.set_wheels_speed(0.0, 0.0)
