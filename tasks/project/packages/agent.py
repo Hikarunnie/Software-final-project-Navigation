@@ -26,7 +26,7 @@ server = None
 
 APPROACH_SPEED     = 0.10
 CREEP_SPEED        = 0.06
-FORWARD_CLEAR_TIME = 0.55
+FORWARD_CLEAR_TIME = 1
 TURN_SPEED         = 0.20
 TURN_TIME_FORWARD  = 0.22
 TURN_TIME_LEFT     = 0.14
@@ -183,7 +183,7 @@ class LaneFollowingController:
         self._lane_half_width = 160.0
         self.last_mask_white  = None
         self.last_mask_yellow = None
-        self.last_error       = 0.0 ,
+        self.last_error       = 0.0
 
     def reset(self):
         self.prev_error       = 0.0
@@ -284,6 +284,17 @@ def update_heading(direction):
     print(f"[Heading] after '{direction}': {_heading}")
 
 
+# Hardcoded turn table — used when edge has no direction attribute (e.g. Godot scene edges)
+_TURN_TABLE = {
+    (1, 3): "left",
+    (3, 1): "right",
+    (1, 2): "forward",
+    (2, 1): "right",
+    (2, 3): "left",
+    (3, 2): "forward",
+}
+
+
 def get_direction_from_route(current_node, goal_node, route_path):
     if not route_path or len(route_path) < 2:
         return "forward"
@@ -299,48 +310,30 @@ def get_direction_from_route(current_node, goal_node, route_path):
 
     next_node = route_path[idx + 1]
 
+    # 1. Try edge direction attribute first (works when hardcoded map is used)
     try:
         for neighbor_id, length, edge_id in road_map.neighbors(current_node):
             if neighbor_id == next_node:
                 edge_data = road_map.get_edge(edge_id)
-                if edge_data and 'direction' in edge_data:
-                    d = edge_data['direction']
-                    print(f"[Direction] edge attr {current_node}→{next_node}: '{d}'")
-                    return d
+                if edge_data:
+                    if edge_data.get('from') == current_node:
+                        d = edge_data.get('direction', None)
+                    else:
+                        d = edge_data.get('reverse_direction', None)
+                    if d is not None:
+                        print(f"[Direction] edge {edge_id} {current_node}→{next_node}: '{d}'")
+                        return d
     except Exception as e:
         print(f"[Direction] edge lookup error: {e}")
 
-    try:
-        cn = road_map.get_node(current_node)
-        nn = road_map.get_node(next_node)
-        if cn and nn:
-            dx  = nn['x'] - cn['x']
-            dy  = nn['y'] - cn['y']
-            mag = (dx ** 2 + dy ** 2) ** 0.5
-            if mag < 1e-6:
-                return "forward"
+    # 2. Fall back to hardcoded turn table (Godot scene edges have no direction field)
+    key = (current_node, next_node)
+    if key in _TURN_TABLE:
+        d = _TURN_TABLE[key]
+        print(f"[Direction] table {current_node}→{next_node}: '{d}'")
+        return d
 
-            nx, ny = dx / mag, dy / mag
-            hx, hy = _heading
-
-            forward_comp =  nx * hx + ny * hy
-            lateral_comp =  nx * hy - ny * hx
-
-            if abs(lateral_comp) < abs(forward_comp) * 0.58:
-                d = "forward"
-            elif lateral_comp > 0:
-                d = "right"
-            else:
-                d = "left"
-
-            print(f"[Direction] heading-aware {current_node}→{next_node} "
-                  f"heading={_heading} delta=({dx:+.2f},{dy:+.2f}) "
-                  f"fwd={forward_comp:+.2f} lat={lateral_comp:+.2f} → '{d}'")
-            return d
-    except Exception as e:
-        print(f"[Direction] coord fallback error: {e}")
-
-    print("[Direction] all lookups failed → 'forward'")
+    print(f"[Direction] no entry for {current_node}→{next_node} — defaulting forward")
     return "forward"
 
 
@@ -423,15 +416,18 @@ class IntersectionFSM:
 class NavigationAgent:
 
     def __init__(self):
-        self.lane_follower    = LaneFollowingController()
-        self.intersection_fsm = IntersectionFSM()
-        self.state            = "driving"
-        self.current_route    = None
-        self._red_window      = deque(maxlen=RED_WINDOW_SIZE)
-        self._driving_frames  = 0
-        self.last_state       = None
+        self.lane_follower      = LaneFollowingController()
+        self.intersection_fsm   = IntersectionFSM()
+        self.state              = "driving"
+        self.current_route      = None
+        self._red_window        = deque(maxlen=RED_WINDOW_SIZE)
+        self._driving_frames    = 0
+        self.last_state         = None
         self._route_initialized = False
-        self.last_detections  = []
+        self.last_detections    = []
+        # How many red line stops remain before we're done.
+        # Set when route is first computed: equals len(path) - 1 (number of edges).
+        self._stops_remaining   = 0
 
         # Object detector — shared across resets, loaded once
         if _DETECTION_AVAILABLE:
@@ -458,6 +454,7 @@ class NavigationAgent:
         self.last_state         = None
         self._route_initialized = False
         self.last_detections    = []
+        self._stops_remaining   = 0
         _reset_heading()
 
     def _transition(self, new_state):
@@ -488,10 +485,15 @@ class NavigationAgent:
         try:
             route = dijkstra(start, goal)
             route['start'] = start
-            print(f"[Agent] Route: {route['path']}")
+            path = route.get('path', [])
+            # Stops needed = edges + 1 (first stop initializes route, rest are crossings)
+            num_edges = max(len(path) - 1, 1)
+            self._stops_remaining = num_edges + 1
+            print(f"[Agent] Route: {path}  →  {num_edges} edge(s), need {num_edges + 1} red stop(s)")
             return route
         except Exception as e:
             print(f"[Agent] Dijkstra error: {e}")
+            self._stops_remaining = 1
             return None
 
     def _run_detection(self, frame_bgr):
@@ -537,7 +539,7 @@ class NavigationAgent:
                 update_heading(direction)
                 self._advance_node()
                 self.current_route   = None
-                self._driving_frames = 0
+                self._driving_frames = -100  # ignore red lines for 2s after crossing (50Hz * 2)
                 self._red_window.clear()
                 self.lane_follower.reset()
                 self.last_detections = []
@@ -564,7 +566,6 @@ class NavigationAgent:
             if obj_stop:
                 print(f"[Agent] Object detected — stopping: {obj_reason}")
                 wheels.set_wheels_speed(0.0, 0.0)
-                # Update debug frame so the box is visible while stopped
                 if frame_bgr is not None:
                     debug_frame = build_debug_frame(
                         raw_bgr     = frame_bgr,
@@ -576,7 +577,7 @@ class NavigationAgent:
                         error       = self.lane_follower.last_error,
                         detections  = self.last_detections,
                     )
-                return True  # keep running — will re-check next frame
+                return True
 
             if not armed:
                 wheels.set_wheels_speed(left, right)
@@ -596,16 +597,25 @@ class NavigationAgent:
                     self._red_window.clear()
                     self._driving_frames = 0
 
+                    # ── First red line: initialise route and count edges ───────
                     if not self._route_initialized:
                         print(f"[Agent] First red line — initializing at node {current_node}")
                         server.current_node = current_node
                         self.current_route  = self._get_route(current_node, goal_node)
                         self._route_initialized = True
+                        # _stops_remaining is now set to len(path)-1 by _get_route
 
-                    if current_node == goal_node:
+                    # ── Decrement stops counter ───────────────────────────────
+                    self._stops_remaining -= 1
+                    print(f"[Agent] Red stop confirmed — stops remaining after this: {self._stops_remaining}")
+
+                    # ── Last stop: we've arrived ──────────────────────────────
+                    if self._stops_remaining <= 0:
+                        print("[Agent] Final red stop reached — route complete!")
                         self._transition("completed")
                         return False
 
+                    # ── Not last stop: cross the intersection ─────────────────
                     print("[Agent] Red line CONFIRMED — entering intersection")
                     route_path = self.current_route.get('path', []) if self.current_route else []
                     direction  = get_direction_from_route(current_node, goal_node, route_path)
