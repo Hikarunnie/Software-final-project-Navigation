@@ -1,22 +1,28 @@
-# Speed
-base_speed: 0.1
-curve_speed: 0.18
+# Base driving speed (straight sections)
+base_speed: 0.2
 
-# Lane controller gains
-# k_d  (lateral_gain)  — corrects sideways offset from lane centre
-# k_phi (heading_gain) — corrects angle between robot heading and lane direction
-lateral_gain: 1.0
-heading_gain: 2.0
+# Speed on curves — lower than base to give more control
+curve_speed: 0.14
 
-# Legacy PD gains — no longer used by the controller, kept for reference
-p_gain: 0.3
-d_gain: 0
-max_steer: 0.30
+# P gain — how hard it corrects lateral offset
+p_gain: 0.4
 
-# Curve detection
+# D gain — dampens oscillation, higher = smoother on curves
+d_gain: 0.15
+
+# Maximum steering command — caps how sharp it can turn
+# Lower this to prevent crossing white line on curves
+max_steer: 0.3
+
+# Curve detection — pixel count threshold to consider it a curve
 curve_threshold: 350
-steering_threshold: 0.15
-curve_boost: 1.3
 
-# Pixel threshold to consider lane detected.
-detection_threshold: 50
+# Steering threshold before curve boost kicks in
+steering_threshold: 0.15
+
+# Curve boost multiplier — 1.0 = disabled, higher = sharper curve turns
+# Keep close to 1.0 to avoid overshooting on curves
+curve_boost: 1.1
+
+# Minimum lane pixels to consider lane detected
+detection_threshold: 20
