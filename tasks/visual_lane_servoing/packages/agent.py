@@ -15,6 +15,11 @@ _ROI_START  = 0.47
 _NUM_SLICES = 3
 _SLICE_TOL  = 5
 
+# Lines are only "too close" if they cross these thresholds.
+# Inside the safe zone → error = 0, robot drives straight.
+_YELLOW_TOO_CLOSE = 0.45   # yellow must stay LEFT  of this  → steer right if crosses
+_WHITE_TOO_CLOSE  = 0.92   # white  must stay RIGHT of this  → steer left  if crosses
+
 
 def detect_lines_in_slices(mask_yellow, mask_white, h):
     slice_height = int(h * 0.35 / _NUM_SLICES)
@@ -47,9 +52,9 @@ class LaneServoingAgent:
         except Exception:
             cfg = {}
 
-        self.p_gain              = cfg.get('p_gain',              0.40)
+        self.p_gain              = cfg.get('p_gain',              0.60)
         self.d_gain              = cfg.get('d_gain',              0.10)
-        self.max_steer           = cfg.get('max_steer',           0.20)
+        self.max_steer           = cfg.get('max_steer',           0.30)
         self.base_speed          = cfg.get('base_speed',          0.17)
         self.curve_speed         = cfg.get('curve_speed',         0.12)
         self.curve_threshold     = cfg.get('curve_threshold',     350)
@@ -64,34 +69,31 @@ class LaneServoingAgent:
 
     def _calculate_error(self, yellow_xs, white_xs, left_det, right_det, w):
         """
-        White visible  → steer LEFT  (positive error)
-        Yellow visible → steer RIGHT (negative error)
-        Both visible   → average
-        Neither        → coast
+        Only react when a line crosses its threshold.
+        Inside the safe zone → error = 0 → drive straight.
         """
         have_yellow = left_det  and len(yellow_xs) > 0
         have_white  = right_det and len(white_xs)  > 0
 
-        # x position as fraction of frame width (0=left, 1=right)
         y_fx = float(np.mean(yellow_xs)) / w if have_yellow else None
         w_fx = float(np.mean(white_xs))  / w if have_white  else None
 
-        if have_yellow and have_white:
-            # White on right → push left (+), yellow on left → push right (-)
-            # Use each line's x position directly: further right = stronger push left
-            white_push  =  w_fx        # white far right = strong left push
-            yellow_push = (1.0 - y_fx) # yellow far left = strong right push
-            error = white_push - yellow_push
+        white_error  = 0.0
+        yellow_error = 0.0
 
-        elif have_white:
-            # Only white: steer left — stronger if white is further right
-            error = w_fx   # ranges 0..1, always positive → always steer left
+        if have_white and w_fx < _WHITE_TOO_CLOSE:
+            # White crossed into danger zone → steer left
+            # The further it crossed, the stronger the push
+            white_error = _WHITE_TOO_CLOSE - w_fx   # positive → steer left
 
-        elif have_yellow:
-            # Only yellow: steer right — stronger if yellow is further left
-            error = -(1.0 - y_fx)   # ranges -1..0, always negative → always steer right
+        if have_yellow and y_fx > _YELLOW_TOO_CLOSE:
+            # Yellow crossed into danger zone → steer right
+            yellow_error = -(y_fx - _YELLOW_TOO_CLOSE)  # negative → steer right
 
-        else:
+        error = white_error + yellow_error
+
+        if error == 0.0 and not have_yellow and not have_white:
+            # No lines at all — decay memory
             return float(np.clip(self._prev_error * 0.9, -1.0, 1.0))
 
         return float(np.clip(error, -1.0, 1.0))
@@ -114,7 +116,7 @@ class LaneServoingAgent:
         if not both_visible:
             speed *= 0.70
         if not left_det:
-            speed *= 0.60   # yellow lost = dangerous, slow down hard
+            speed *= 0.60
 
         left  = float(np.clip(speed - steering, 0.0, 1.0))
         right = float(np.clip(speed + steering, 0.0, 1.0))

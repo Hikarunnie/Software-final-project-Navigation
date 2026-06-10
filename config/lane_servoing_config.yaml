@@ -5,10 +5,10 @@ base_speed: 0.2
 curve_speed: 0.14
 
 # P gain — how hard it corrects lateral offset
-p_gain: 0.4
+p_gain: 1
 
 # D gain — dampens oscillation, higher = smoother on curves
-d_gain: 0.15
+d_gain: 1
 
 # Maximum steering command — caps how sharp it can turn
 # Lower this to prevent crossing white line on curves
