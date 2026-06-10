@@ -505,8 +505,9 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                 end_time = time.time() + 4.0
                 step = 0
                 dance_colors = [
-                    [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
-                    [1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],  # red
+                    [0.0, 0.0, 1.0],  # blue
+                    [0.0, 1.0, 0.0],  # green
                 ]
                 while time.time() < end_time and not stop_event.is_set():
                     l, r = (0.8, -0.8) if step % 2 == 0 else (-0.8, 0.8)
@@ -514,7 +515,9 @@ def main(camera, wheels, leds, stop_event, server_module=None):
                         wheels.set_wheels_speed(l, r)
                     if leds:
                         try:
-                            leds.set_led(0, dance_colors[step % len(dance_colors)])
+                            color = dance_colors[step % len(dance_colors)]
+                            for led in (0, 2, 3, 4):
+                                leds.set_rgb(led, color)
                         except Exception:
                             pass
                     time.sleep(0.1)
