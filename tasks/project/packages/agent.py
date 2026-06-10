@@ -35,12 +35,12 @@ elif os.environ.get('DUCKIEBOT_SIM', '') == '1':
 print(f"[Agent] Running on: {'REAL ROBOT' if _IS_REAL else 'SIMULATION'}", flush=True)
 
 # ── Speeds ────────────────────────────────────────────────────────────────────
-MOTOR_BIAS = 0.05 if _IS_REAL else 0.0
+MOTOR_BIAS = 0 if _IS_REAL else 0.0
 # Speed while slowly driving over the red stop line before turning
-CREEP_SPEED = 0.06  if not _IS_REAL else 0.2
+CREEP_SPEED = 0.06  if not _IS_REAL else 0.3
 
 # Speed when driving forward after a turn, searching for lane markings
-EXIT_SPEED  = 0.20  if not _IS_REAL else 0.2
+EXIT_SPEED  = 0.20  if not _IS_REAL else 0.3
 
 # Speed of each wheel during a left/right rotation at an intersection
 TURN_SPEED  = 0.20  if not _IS_REAL else 0.1

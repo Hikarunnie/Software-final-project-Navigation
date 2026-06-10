@@ -7,21 +7,21 @@ def detect_curve(
     white_xs:  List[int],
     curve_threshold: int = 350,
 ) -> Tuple[bool, int]:
-    shifts = []
+    """
+    xs[0] is nearest to the robot; xs[-1] is farthest ahead.
+    A curve is detected when a line shifts by more than `curve_threshold`
+    pixels between the nearest and farthest slice.
+    Returns (is_curve, direction) where direction: +1 = right, -1 = left, 0 = none.
+    """
+    shift = None
 
     if len(yellow_xs) >= 2:
-        shifts.append(yellow_xs[-1] - yellow_xs[0])
+        shift = yellow_xs[-1] - yellow_xs[0]   # positive = line drifts right → left curve
+    elif len(white_xs) >= 2:
+        shift = white_xs[-1] - white_xs[0]
 
-    if len(white_xs) >= 2:
-        shifts.append(white_xs[-1] - white_xs[0])
-
-    if not shifts:
+    if shift is None or abs(shift) < curve_threshold:
         return False, 0
 
-    mean_shift = float(np.mean(shifts))
-
-    if abs(mean_shift) > curve_threshold:
-        curve_direction = -1 if mean_shift > 0 else 1
-        return True, curve_direction
-
-    return False, 0
+    direction = 1 if shift > 0 else -1
+    return True, direction

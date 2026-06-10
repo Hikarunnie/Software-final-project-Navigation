@@ -11,96 +11,61 @@ try:
 except FileNotFoundError:
     _h = {}
 
-_yellow_lower = np.array([_h.get('yellow_lower_h', 22),  _h.get('yellow_lower_s', 100), _h.get('yellow_lower_v', 100)])
-_yellow_upper = np.array([_h.get('yellow_upper_h', 35),  _h.get('yellow_upper_s', 255), _h.get('yellow_upper_v', 255)])
-_white_lower  = np.array([_h.get('white_lower_h',   0),  _h.get('white_lower_s',    0), _h.get('white_lower_v',  175)])
-_white_upper  = np.array([_h.get('white_upper_h', 179),  _h.get('white_upper_s',   55), _h.get('white_upper_v',  255)])
+_yellow_lower = np.array([_h.get('yellow_lower_h', 0),  _h.get('yellow_lower_s', 0),  _h.get('yellow_lower_v', 0)])
+_yellow_upper = np.array([_h.get('yellow_upper_h', 0),  _h.get('yellow_upper_s', 0), _h.get('yellow_upper_v', 0)])
 
+_white_lower = np.array([_h.get('white_lower_h', 0),   _h.get('white_lower_s', 0), _h.get('white_lower_v', 0)])
+_white_upper = np.array([_h.get('white_upper_h', 0), _h.get('white_upper_s', 0), _h.get('white_upper_v', 0)])
 
 def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Returns (yellow_mask, white_mask) as float32 binary arrays (0.0 or 1.0).
-    Input: BGR image from the Duckiebot camera.
-
-    Yellow = left dashed centre line  → only searched in LEFT 60 % of frame.
-    White  = right solid edge line    → only searched in RIGHT 65 % of frame.
-
-    The white line appears as two parallel edge strokes (left and right border
-    of the painted line). A vertical closing kernel (height=15) bridges the gap
-    between the two strokes, filling the line into one solid region.
-    """
     h, w = image.shape[:2]
 
-    # 1. Only look at the bottom 55 % of the frame (road, not horizon/sky)
-    crop_top = int(h * 0.45)
-    roi = image[crop_top:, :]
-    rh, rw = roi.shape[:2]
+    gray    = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    hsv     = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    blurred = cv2.GaussianBlur(gray, (0, 0), sigmaX=2)
 
-    # 2. Blur to suppress sensor noise before colour detection
-    blurred = cv2.GaussianBlur(roi, (5, 5), 1.5)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    sobelx = cv2.Sobel(blurred, cv2.CV_64F, 1, 0)
+    sobely = cv2.Sobel(blurred, cv2.CV_64F, 0, 1)
+    Gmag   = np.sqrt(sobelx**2 + sobely**2)
 
-    # 3. Colour masks
-    yellow_colour = cv2.inRange(hsv, _yellow_lower, _yellow_upper)
-    white_colour  = cv2.inRange(hsv, _white_lower,  _white_upper)
+    mask_mag = Gmag > 50
 
-    # 4. Canny edge mask on the V (brightness) channel
-    v_blur = cv2.GaussianBlur(hsv[:, :, 2], (3, 3), 1.0)
-    edges  = cv2.Canny(v_blur, 25, 70)
-    k_edge = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    edges  = cv2.dilate(edges, k_edge)
+    mask_yellow_color = cv2.inRange(hsv, _yellow_lower, _yellow_upper)
+    mask_white_color  = cv2.inRange(hsv, _white_lower,  _white_upper)
 
-    # 5. Yellow needs edge AND colour (avoids floor noise).
-    #    White uses colour mask ONLY — no edge AND — so the full solid area
-    #    is detected, not just the two outline strokes.
-    yellow_mask = cv2.bitwise_and(yellow_colour, edges)
-    white_mask  = white_colour.copy()
+    # NO half-image masks — color alone distinguishes the two lines
+    mask_left = (
+        mask_mag
+        & (sobelx < 0)
+        & (sobely < 0)
+        & (mask_yellow_color > 0)
+    ).astype(np.float32)
 
-    # 6. Hard spatial split
-    yellow_mask[:, int(rw * 0.60):] = 0
-    white_mask[:, :int(rw * 0.35)] = 0
+    mask_right = (
+        mask_mag
+        & (sobely < 0)
+        & (mask_white_color > 0)
+    ).astype(np.float32)
 
-    # 7. Morphological cleanup
-    k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    k7 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    return mask_left, mask_right
 
-    # Yellow: small open + close for dashes
-    yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN,  k3)
-    yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, k7)
 
-    # White: open to kill noise, close to fill any remaining gaps
-    white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN,  k3)
-    white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, k7)
 
-    # Black out everything above the topmost white pixel — the floor appears
-    # further up in the frame than the actual white line marking.
-    rows = np.where(white_mask > 0)[0]
-    if len(rows) > 0:
-        white_top_row = int(rows.min())
-        white_mask[:white_top_row, :] = 0
-
-    # 8. Embed ROI back into full-frame arrays
-    full_yellow = np.zeros((h, w), dtype=np.uint8)
-    full_white  = np.zeros((h, w), dtype=np.uint8)
-    full_yellow[crop_top:, :] = yellow_mask
-    full_white[crop_top:,  :] = white_mask
-
-    return (full_yellow > 0).astype(np.float32), (full_white > 0).astype(np.float32)
 
 
 def set_hsv_bounds(yellow_lower, yellow_upper, white_lower, white_upper):
     global _yellow_lower, _yellow_upper, _white_lower, _white_upper
-    _yellow_lower = np.array(yellow_lower)
-    _yellow_upper = np.array(yellow_upper)
-    _white_lower  = np.array(white_lower)
-    _white_upper  = np.array(white_upper)
+    _yellow_lower    = np.array(yellow_lower)
+    _yellow_upper    = np.array(yellow_upper)
+    _white_lower = np.array(white_lower)
+    _white_upper = np.array(white_upper)
 
 def get_hsv_bounds():
     return {
-        'yellow_lower_h': int(_yellow_lower[0]), 'yellow_upper_h': int(_yellow_upper[0]),
-        'yellow_lower_s': int(_yellow_lower[1]), 'yellow_upper_s': int(_yellow_upper[1]),
-        'yellow_lower_v': int(_yellow_lower[2]), 'yellow_upper_v': int(_yellow_upper[2]),
-        'white_lower_h':  int(_white_lower[0]),  'white_upper_h':  int(_white_upper[0]),
-        'white_lower_s':  int(_white_lower[1]),  'white_upper_s':  int(_white_upper[1]),
-        'white_lower_v':  int(_white_lower[2]),  'white_upper_v':  int(_white_upper[2]),
+        'yellow_lower_h': int(_yellow_lower[0]),    'yellow_upper_h': int(_yellow_upper[0]),
+        'yellow_lower_s': int(_yellow_lower[1]),    'yellow_upper_s': int(_yellow_upper[1]),
+        'yellow_lower_v': int(_yellow_lower[2]),    'yellow_upper_v': int(_yellow_upper[2]),
+        'white_lower_h':  int(_white_lower[0]), 'white_upper_h':  int(_white_upper[0]),
+        'white_lower_s':  int(_white_lower[1]), 'white_upper_s':  int(_white_upper[1]),
+        'white_lower_v':  int(_white_lower[2]), 'white_upper_v':  int(_white_upper[2]),
     }
