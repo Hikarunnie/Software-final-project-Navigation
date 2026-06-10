@@ -1,5 +1,5 @@
 # Base driving speed (straight sections)
-base_speed: 0.2
+base_speed: 0.27
 
 # Speed on curves — lower than base to give more control
 curve_speed: 0.14

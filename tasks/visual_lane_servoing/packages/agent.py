@@ -52,9 +52,9 @@ class LaneServoingAgent:
         except Exception:
             cfg = {}
 
-        self.p_gain              = cfg.get('p_gain',              0.60)
-        self.d_gain              = cfg.get('d_gain',              0.10)
-        self.max_steer           = cfg.get('max_steer',           0.30)
+        self.p_gain              = cfg.get('p_gain',              0.35)
+        self.d_gain              = cfg.get('d_gain',              0.08)
+        self.max_steer           = cfg.get('max_steer',           0.06)
         self.base_speed          = cfg.get('base_speed',          0.17)
         self.curve_speed         = cfg.get('curve_speed',         0.12)
         self.curve_threshold     = cfg.get('curve_threshold',     350)
@@ -63,8 +63,8 @@ class LaneServoingAgent:
         self.frame_count     = 0
         self._prev_error     = 0.0
         self._filtered_error = 0.0
-        self._left_history   = deque(maxlen=2)
-        self._right_history  = deque(maxlen=2)
+        self._left_history   = deque(maxlen=4)
+        self._right_history  = deque(maxlen=4)
         self.last_debug_info = self._empty_debug_info(480, 640)
 
     def _calculate_error(self, yellow_xs, white_xs, left_det, right_det, w):
@@ -118,8 +118,9 @@ class LaneServoingAgent:
         if not left_det:
             speed *= 0.60
 
-        left  = float(np.clip(speed - steering, 0.0, 1.0))
-        right = float(np.clip(speed + steering, 0.0, 1.0))
+        min_speed = speed * 0.5  # never let a wheel drop below half speed = smooth curves
+        left  = float(np.clip(speed - steering, min_speed, 1.0))
+        right = float(np.clip(speed + steering, min_speed, 1.0))
         return left, right
 
     def _smooth(self, left, right):
