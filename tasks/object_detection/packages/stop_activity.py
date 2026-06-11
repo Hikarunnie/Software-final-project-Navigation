@@ -38,8 +38,8 @@ def should_stop(detections: List[Detection], img_size: int) -> Tuple[bool, str]:
     global _state, _decel_frame, _clear_count, _stop_reason
 
     RELEASE_FRAMES = 5
-    STOP_Y = 0.55
-    WARN_Y = 0.40
+    STOP_Y = 0.70
+    WARN_Y = 0.55
 
     filtered = [d for d in detections if not _is_in_opposing_lane(d[0], img_size)]
 
@@ -65,21 +65,22 @@ def should_stop(detections: List[Detection], img_size: int) -> Tuple[bool, str]:
         return False, ''
 
     elif _state == DECELERATING:
-        if not filtered:
-            _state = LANE_FOLLOWING
-            return False, ''
+      if not filtered:
+        _state = LANE_FOLLOWING
+        _decel_frame = 0
+        return False, ''
 
-        _decel_frame += 1
-        best = _get_best_detection(filtered, img_size)
-        _, _, _, y2 = best[0]
-        cls_id = best[2]
+      _decel_frame += 1
+      best = _get_best_detection(filtered, img_size)
+      _, _, _, y2 = best[0]
+      cls_id = best[2]
 
-        if y2 > STOP_Y * img_size or _decel_frame > 7:
-            _state = OBSTACLE_PRESENT
-            _stop_reason = f'{class_names.get(cls_id, str(cls_id))}_ahead'
-            return True, _stop_reason
+      if y2 > STOP_Y * img_size:
+        _state = OBSTACLE_PRESENT
+        _stop_reason = f'{class_names.get(cls_id, str(cls_id))}_ahead'
+        return True, _stop_reason
 
-        return False, _stop_reason
+      return False, _stop_reason
 
     else:
         if not filtered:
