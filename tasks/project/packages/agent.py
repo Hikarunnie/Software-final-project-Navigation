@@ -20,9 +20,7 @@ except ImportError as e:
 server = None
 
 
-# ============================================================================
 # TUNING CONSTANTS
-# ============================================================================
 
 APPROACH_SPEED     = 0.10
 CREEP_SPEED        = 0.06
@@ -42,19 +40,13 @@ TURN_TIMES = {
 
 RED_WINDOW_SIZE  = 12
 RED_VOTE_THRESH  = 0.65
-RED_CLEAR_FRAMES = 5   # consecutive red-free frames before detection re-arms
-                       # after a crossing — waits for the previous intersection's
-                       # red lines to actually leave the view instead of counting
-                       # a fixed number of frames, so a short edge (e.g. 3→2)
-                       # can't carry the robot past the next stop line while blind
+RED_CLEAR_FRAMES = 5   # red-free frames needed to re-arm detection after a crossing
 
 CLASS_NAMES  = {0: 'duckie', 1: 'truck', 2: 'sign'}
 CLASS_COLORS = {0: (0, 215, 255), 1: (180, 100, 220), 2: (50, 205, 50)}
 
 
-# ============================================================================
 # DEBUG VISUALISATION
-# ============================================================================
 
 debug_frame = None
 
@@ -120,9 +112,7 @@ def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, er
     return np.hstack([raw, right_col])
 
 
-# ============================================================================
 # RED LINE DETECTION
-# ============================================================================
 
 def detect_red_line(image):
     if image is None or len(image.shape) != 3:
@@ -172,9 +162,7 @@ def detect_red_line(image):
     return True, mask
 
 
-# ============================================================================
 # LANE FOLLOWING CONTROLLER
-# ============================================================================
 
 class LaneFollowingController:
 
@@ -266,9 +254,7 @@ class LaneFollowingController:
         return left, right
 
 
-# ============================================================================
 # HEADING TRACKER
-# ============================================================================
 
 _heading = [1.0, 0.0]
 
@@ -341,9 +327,7 @@ def get_direction_from_route(current_node, goal_node, route_path):
     return "forward"
 
 
-# ============================================================================
 # INTERSECTION FSM
-# ============================================================================
 
 class IntersectionFSM:
 
@@ -413,9 +397,7 @@ class IntersectionFSM:
         return True
 
 
-# ============================================================================
 # NAVIGATION AGENT
-# ============================================================================
 
 class NavigationAgent:
 
@@ -525,7 +507,6 @@ class NavigationAgent:
         red_mask  = None
         fsm_phase = None
 
-        # ── COMPLETED ─────────────────────────────────────────────────────────
         if self.state == "completed":
             wheels.set_wheels_speed(0.0, 0.0)
             self._transition("celebrating")
@@ -535,7 +516,6 @@ class NavigationAgent:
             wheels.set_wheels_speed(0.0, 0.0)
             return False
 
-        # ── CROSSING ──────────────────────────────────────────────────────────
         if self.state == "crossing":
             fsm_phase     = self.intersection_fsm._phase
             still_running = self.intersection_fsm.update(wheels)
@@ -545,9 +525,7 @@ class NavigationAgent:
                 update_heading(direction)
                 self._advance_node()
                 self.current_route   = None
-                # Disarm red detection until the crossed intersection's red
-                # lines have left the camera view (re-armed while driving)
-                self._red_armed        = False
+                self._red_armed        = False  # re-armed once this red line leaves the view
                 self._red_clear_frames = 0
                 self._red_window.clear()
                 self.lane_follower.reset()
@@ -563,11 +541,9 @@ class NavigationAgent:
                 )
             return True
 
-        # ── DRIVING ───────────────────────────────────────────────────────────
         if self.state == "driving":
             left, right = self.lane_follower.compute_commands(frame_bgr)
 
-            # ── Object detection — stop if something is in the way ────────────
             obj_stop, obj_reason = self._run_detection(frame_bgr)
             if obj_stop:
                 print(f"[Agent] Object detected — stopping: {obj_reason}")
@@ -588,8 +564,6 @@ class NavigationAgent:
             red_detected, red_mask = detect_red_line(frame_bgr)
 
             if not self._red_armed:
-                # Wait for the previous intersection's red lines to disappear
-                # before hunting for the next stop line
                 if red_detected:
                     self._red_clear_frames = 0
                 else:
@@ -612,7 +586,6 @@ class NavigationAgent:
                     wheels.set_wheels_speed(0.0, 0.0)
                     self._red_window.clear()
 
-                    # ── First red line: initialise route and count edges ───────
                     if not self._route_initialized:
                         print(f"[Agent] First red line — initializing at node {current_node}")
                         server.current_node = current_node
@@ -620,17 +593,14 @@ class NavigationAgent:
                         self._route_initialized = True
                         # _stops_remaining is now set to len(path)-1 by _get_route
 
-                    # ── Decrement stops counter ───────────────────────────────
                     self._stops_remaining -= 1
                     print(f"[Agent] Red stop confirmed — stops remaining after this: {self._stops_remaining}")
 
-                    # ── Last stop: we've arrived ──────────────────────────────
                     if self._stops_remaining <= 0:
                         print("[Agent] Final red stop reached — route complete!")
                         self._transition("completed")
                         return False
 
-                    # ── Not last stop: cross the intersection ─────────────────
                     print("[Agent] Red line CONFIRMED — entering intersection")
                     route_path = self.current_route.get('path', []) if self.current_route else []
                     direction  = get_direction_from_route(current_node, goal_node, route_path)
@@ -656,9 +626,7 @@ class NavigationAgent:
 agent = NavigationAgent()
 
 
-# ============================================================================
 # MAIN LOOP  — called by the server in a thread
-# ============================================================================
 
 def main(camera, wheels, leds, stop_event, server_module=None):
     global server

@@ -90,5 +90,4 @@ class RoadMap:
         return list(self.edges.keys())
 
 
-# Singleton — import this in pathfinding and navigation code
 road_map = RoadMap()
