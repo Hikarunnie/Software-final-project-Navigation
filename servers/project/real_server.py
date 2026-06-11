@@ -219,6 +219,9 @@ def start_navigation():
     if _navigation_thread and _navigation_thread.is_alive():
         print("[Navigation] Already running", flush=True)
         return
+    # Share the server's detector with the navigation agent
+    if det_agent is not None:
+        agent.agent.detector = det_agent
     # Capture node values NOW before any other thread changes them
     _start = current_node
     _goal  = goal_node

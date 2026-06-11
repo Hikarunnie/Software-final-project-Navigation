@@ -130,6 +130,10 @@ def start_navigation():
         print("[Navigation] Already running")
         return
 
+    # Share the server's detector with the navigation agent
+    if det_agent is not None:
+        agent.agent.detector = det_agent
+
     print("[Navigation] Starting navigation loop...")
     _navigation_stop.clear()
     import servers.project.virtual_server as _self

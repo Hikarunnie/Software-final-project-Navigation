@@ -9,12 +9,12 @@ from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
 
 try:
-    from tasks.project.packages.detection_agent import ObjectDetectionAgent
     from tasks.project.packages.detection_stop import should_stop
-    _DETECTION_AVAILABLE = True
 except ImportError as e:
-    print(f"[Agent] Object detection not available: {e}", flush=True)
-    _DETECTION_AVAILABLE = False
+    print(f"[Agent] Detection stop not available: {e}", flush=True)
+
+    def should_stop(*args):
+        return False, ''
 
 server      = None
 debug_frame = None
@@ -343,15 +343,7 @@ class NavigationAgent:
         self._driving_frames  = 0
         self._route_initialized = False
         self.last_detections = []
-        if _DETECTION_AVAILABLE:
-            try:
-                self.detector = ObjectDetectionAgent()
-                print("[Agent] Object detector loaded", flush=True)
-            except Exception as e:
-                    print(f"[Agent] Object detector failed to load: {e}", flush=True)
-                    self.detector = None
-        else:
-            self.detector = None
+        self.detector = None
         _reset_heading()
 
     def reset(self):

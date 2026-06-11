@@ -72,11 +72,7 @@ class ObjectDetectionAgent:
             print(f"[ObjectDetection] {self.load_error}")
             return
 
-        if self._tensorrt_available():
-            self.trt_building     = True
-            self._trt_build_start = time.time()
-            threading.Thread(target=self._build_trt_engine, daemon=True).start()
-        elif self._try_onnxruntime():
+        if self._try_onnxruntime():
             pass
         else:
             self._try_cv2dnn()
