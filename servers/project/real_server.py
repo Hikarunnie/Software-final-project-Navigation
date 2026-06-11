@@ -3,6 +3,7 @@ import os
 import signal
 import threading
 import argparse
+import queue
 import time
 
 script_dir   = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +22,8 @@ from launcher.ports import find_available_port
 from servers.common import shutdown_cleanup, suppress_http_logs
 from servers.templates.project import get_template as HTML_TEMPLATE
 from tasks.project.packages.optimal_path import dijkstra
+from tasks.project.packages.detection_agent import ObjectDetectionAgent, CLASS_NAMES
+from servers.project.detection_visualization import draw_detections
 
 app        = Flask(__name__)
 camera     = None
@@ -44,6 +47,27 @@ _DANCE_COLORS = [
 ]
 maneuver_thread = None
 maneuver_stop   = threading.Event()
+
+det_agent = None
+_frame_queue = queue.Queue(maxsize=1)
+_last_detections = []
+_detection_lock = threading.Lock()
+
+
+def detection_loop():
+    global _last_detections
+    while True:
+        if det_agent is None or not det_agent.model_loaded:
+            time.sleep(0.1)
+            continue
+        try:
+            frame_rgb = _frame_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        result = det_agent.detect(frame_rgb)
+        if result is not None:
+            with _detection_lock:
+                _last_detections = result
 
 
 def start_maneuver(fn, *args):
@@ -105,7 +129,7 @@ def _overlay_loop():
     import tasks.project.packages.agent as agent_mod
     while True:
         try:
-            # Navigation: use agent debug frame
+            # Navigation: use agent debug frame (already has detections drawn)
             if agent_mod.debug_frame is not None:
                 with _overlay_lock:
                     _overlay_frame[0] = agent_mod.debug_frame
@@ -125,6 +149,14 @@ def _overlay_loop():
             if len(frame.shape) == 3 and frame.shape[2] == 4:
                 frame = frame[:, :, :3]
 
+            # Push frame to detection queue
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if det_agent is not None and det_agent.model_loaded:
+                try:
+                    _frame_queue.put_nowait(frame_rgb)
+                except queue.Full:
+                    pass
+
             try:
                 from tasks.visual_lane_servoing.packages.visual_servoing_activity import detect_lane_markings
                 from tasks.project.packages.agent import build_debug_frame
@@ -140,6 +172,11 @@ def _overlay_loop():
                 )
             except Exception:
                 display = frame
+
+            with _detection_lock:
+                dets = list(_last_detections)
+            if dets:
+                draw_detections(display, dets)
 
             with _overlay_lock:
                 _overlay_frame[0] = display
@@ -243,14 +280,30 @@ def video():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+@app.route('/set_threshold', methods=['POST'])
+def set_threshold():
+    value = request.json.get('value') if request.json else None
+    if det_agent and value is not None:
+        det_agent.conf_threshold = float(value)
+    return jsonify({'conf_threshold': det_agent.conf_threshold if det_agent else None})
+
+
 @app.route('/status')
 def status():
+    with _detection_lock:
+        dets = list(_last_detections)
     return jsonify({
-        'current_node': current_node,
-        'goal_node':    goal_node,
-        'left_speed':   round(current_speeds['left'], 2),
-        'right_speed':  round(current_speeds['right'], 2),
-        'mode':         'manual' if _manual_mode else 'navigation',
+        'current_node':   current_node,
+        'goal_node':      goal_node,
+        'left_speed':     round(current_speeds['left'], 2),
+        'right_speed':    round(current_speeds['right'], 2),
+        'mode':           'manual' if _manual_mode else 'navigation',
+        'model_loaded':   det_agent.model_loaded if det_agent else False,
+        'conf_threshold': det_agent.conf_threshold if det_agent else 0.5,
+        'detections':     [
+            {'class': CLASS_NAMES.get(c, str(c)), 'score': round(s, 3), 'bbox': list(b)}
+            for b, s, c in dets
+        ],
     })
 
 
@@ -470,7 +523,19 @@ def main():
     if camera is None:
         print('  WARNING: Camera failed to start')
 
-    print('\n[4/4] Ready — use the UI to start navigation')
+    print('\n[4/5] Loading detection model...')
+    global det_agent
+    try:
+        det_agent = ObjectDetectionAgent()
+        if det_agent.model_loaded:
+            print(f'  Detection model ready ({det_agent.img_size}px)')
+        else:
+            print(f'  Detection model: {det_agent.load_error or "not available"}')
+    except Exception as e:
+        print(f'  Detection model failed: {e}')
+    threading.Thread(target=detection_loop, daemon=True).start()
+
+    print('\n[5/5] Ready — use the UI to start navigation')
 
     def _shutdown(signum, frame):
         print('\nShutting down...')

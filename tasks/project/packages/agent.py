@@ -9,8 +9,8 @@ from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
 
 try:
-    from tasks.object_detection.packages.agent import ObjectDetectionAgent
-    from tasks.object_detection.packages.stop_activity import should_stop
+    from tasks.project.packages.detection_agent import ObjectDetectionAgent
+    from tasks.project.packages.detection_stop import should_stop
     _DETECTION_AVAILABLE = True
 except ImportError as e:
     print(f"[Agent] Object detection not available: {e}", flush=True)

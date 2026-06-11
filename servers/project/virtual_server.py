@@ -3,6 +3,7 @@ import os
 import threading
 import time
 import argparse
+import queue
 import yaml
 from tasks.project.packages.optimal_path import dijkstra
 
@@ -23,6 +24,8 @@ from servers.common import shutdown_cleanup, suppress_http_logs
 from tasks.introduction.packages import manual_drive
 from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from servers.visual_lane_servoing.visualization import create_lane_visualization
+from tasks.project.packages.detection_agent import ObjectDetectionAgent, CLASS_NAMES
+from servers.project.detection_visualization import draw_detections
 
 app = Flask(__name__)
 
@@ -43,6 +46,27 @@ _navigation_thread = None
 _navigation_stop = threading.Event()
 
 LANE_HSV_CONFIG_FILE = os.path.join(project_root, 'config', 'lane_servoing_hsv_config.yaml')
+
+det_agent = None
+_frame_queue = queue.Queue(maxsize=1)
+_last_detections = []
+_detection_lock = threading.Lock()
+
+
+def detection_loop():
+    global _last_detections
+    while not stop_event.is_set():
+        if det_agent is None or not det_agent.model_loaded:
+            time.sleep(0.1)
+            continue
+        try:
+            frame_rgb = _frame_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        result = det_agent.detect(frame_rgb)
+        if result is not None:
+            with _detection_lock:
+                _last_detections = result
 
 def _get_student_module():
     from tasks.visual_lane_servoing.packages import visual_servoing_activity
@@ -240,10 +264,6 @@ def create_visualization(frame):
     return display
 
 def generate_frames():
-    """
-    MJPEG generator for /video.
-    - Mod: Always use lane servoing visualization regardless of mode.
-    """
     while True:
         try:
             display = None
@@ -251,15 +271,32 @@ def generate_frames():
                 ok, raw_rgb = camera.read_rgb()
                 if ok and raw_rgb is not None:
                     raw_bgr = cv2.cvtColor(raw_rgb, cv2.COLOR_RGB2BGR)
-                    _vls_agent.compute_commands(raw_rgb)
-                    vis = create_lane_visualization(
-                        raw_bgr,
-                        _vls_agent.last_debug_info,
-                        current_speeds['left'],
-                        current_speeds['right']
-                    )
-                    # We can still add the keyboard overlay
-                    display = create_visualization(vis)
+
+                    if not _manual_mode:
+                        import tasks.project.packages.agent as agent_mod
+                        if agent_mod.debug_frame is not None:
+                            display = agent_mod.debug_frame
+                    else:
+                        if det_agent is not None and det_agent.model_loaded:
+                            try:
+                                _frame_queue.put_nowait(raw_rgb)
+                            except queue.Full:
+                                pass
+
+                    if display is None:
+                        with _detection_lock:
+                            dets = list(_last_detections)
+                        frame_for_viz = raw_bgr.copy()
+                        if dets:
+                            draw_detections(frame_for_viz, dets)
+                        _vls_agent.compute_commands(raw_rgb)
+                        vis = create_lane_visualization(
+                            frame_for_viz,
+                            _vls_agent.last_debug_info,
+                            current_speeds['left'],
+                            current_speeds['right']
+                        )
+                        display = create_visualization(vis)
 
             if display is None:
                 placeholder = np.zeros((240, 640, 3), dtype=np.uint8)
@@ -469,14 +506,30 @@ def get_goal():
     return jsonify({'node': goal_node})
 
 
+@app.route('/set_threshold', methods=['POST'])
+def set_threshold():
+    value = request.json.get('value') if request.json else None
+    if det_agent and value is not None:
+        det_agent.conf_threshold = float(value)
+    return jsonify({'conf_threshold': det_agent.conf_threshold if det_agent else None})
+
+
 @app.route('/status')
 def status():
+    with _detection_lock:
+        dets = list(_last_detections)
     return jsonify({
         'current_node': current_node,
         'goal_node': goal_node,
         'left_speed': round(current_speeds['left'], 2),
         'right_speed': round(current_speeds['right'], 2),
         'mode': 'manual' if _manual_mode else 'navigation',
+        'model_loaded': det_agent.model_loaded if det_agent else False,
+        'conf_threshold': det_agent.conf_threshold if det_agent else 0.5,
+        'detections': [
+            {'class': CLASS_NAMES.get(c, str(c)), 'score': round(s, 3), 'bbox': list(b)}
+            for b, s, c in dets
+        ],
     })
 
 
@@ -495,7 +548,7 @@ def main():
     print("NAVIGATION PROJECT (SIMULATION)")
     print("=" * 60)
 
-    print("\n[1/2] Initializing wheels driver...")
+    print("\n[1/3] Initializing wheels driver...")
     left_cfg = WheelPWMConfiguration()
     right_cfg = WheelPWMConfiguration()
     wheels = GodotWheelsDriver(
@@ -507,7 +560,7 @@ def main():
     wheels.trim = 0
     print(f"  Wheels: {args.godot_host}:{args.wheel_port}")
 
-    print("\n[2/2] Initializing camera driver...")
+    print("\n[2/3] Initializing camera driver...")
     camera_cfg = GodotCameraConfig(host="0.0.0.0", port=args.frame_port)
     camera = GodotCameraDriver(godot_config=camera_cfg)
     camera.start()
@@ -516,6 +569,15 @@ def main():
     stop_event.clear()
     control_thread = threading.Thread(target=control_loop, daemon=True)
     control_thread.start()
+
+    global det_agent
+    print("\n[3/3] Loading detection model...")
+    det_agent = ObjectDetectionAgent()
+    if det_agent.model_loaded:
+        print(f"  Detection model ready ({det_agent.img_size}px)")
+    else:
+        print(f"  Detection model: {det_agent.load_error or 'not available'}")
+    threading.Thread(target=detection_loop, daemon=True).start()
 
     web_port = find_available_port(args.port)
     if web_port != args.port:

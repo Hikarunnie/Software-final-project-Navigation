@@ -3,7 +3,10 @@ from .base import render_template
 _CONTENT = '''
     <div class="container">
         <div class="video-section">
-            <img src="/video" class="stream" id="videoStream">
+            <div class="video-wrapper">
+                <div id="stop-banner" class="stop-banner"></div>
+                <img src="/video" class="stream" id="videoStream">
+            </div>
         </div>
 
         <div class="controls-section">
@@ -185,6 +188,25 @@ _CONTENT = '''
                 </div>
             </div>
 
+            <div class="card">
+                <div class="card-header">
+                    Detection
+                    <span style="font-size:11px;font-weight:400;color:var(--text-muted)" id="det-count"></span>
+                </div>
+                <div id="model-status" class="model-status ok">Loading...</div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Confidence Threshold</span></div>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <input id="conf-slider" type="range" min="0" max="1" step="0.01" value="0.5"
+                            style="flex:1" oninput="onThresholdChange(this.value)">
+                        <span id="conf-value" style="font-size:13px;font-variant-numeric:tabular-nums;min-width:32px">0.50</span>
+                    </div>
+                </div>
+                <div id="detections" class="detections-list">
+                    <div class="empty-state">Waiting for frames...</div>
+                </div>
+            </div>
+
         </div>
     </div>
 '''
@@ -231,6 +253,22 @@ _EXTRA_CSS = '''
 .hsv-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
 .hsv-section-title.yellow { color: #f1c40f; }
 .hsv-section-title.white  { color: #ecf0f1; }
+
+.video-wrapper { position: relative; display: inline-block; line-height: 0; }
+.stop-banner { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(192,57,43,0.88); color: #fff; text-align: center; font-size: 13px; font-weight: 700; padding: 6px 16px; border-radius: 4px; letter-spacing: 0.5px; white-space: nowrap; z-index: 10; pointer-events: none; }
+.stop-banner.active { display: block; }
+.stream.stopped { outline: 3px solid #c0392b; }
+
+.detections-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.det-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; background: var(--bg-sidebar); border: 1px solid var(--border-color); border-radius: 4px; font-size: 12px; }
+.det-class { font-weight: 600; color: var(--text-primary); }
+.det-score { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.det-bbox  { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.empty-state { color: var(--text-muted); font-size: 12px; text-align: center; padding: 12px; }
+.model-status { padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 10px; }
+.model-status.ok      { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.3);  color: var(--accent-green); }
+.model-status.err     { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--accent-red); }
+.model-status.building{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
 '''
 
 _EXTRA_JS = '''
@@ -405,6 +443,64 @@ function refreshStatus() {
 
 refreshStatus();
 setInterval(refreshStatus, 500);
+
+// ── Detection polling ─────────────────────────────────────────────────────────
+
+let _sliderDirty = false;
+
+function onThresholdChange(value) {
+    document.getElementById('conf-value').textContent = parseFloat(value).toFixed(2);
+    _sliderDirty = true;
+    postJSON('/set_threshold', {value: parseFloat(value)}).then(() => { _sliderDirty = false; });
+}
+
+async function pollDetection() {
+    try {
+        const data = await fetch('/status').then(r => r.json());
+
+        const banner = document.getElementById('stop-banner');
+        const streamImg = document.getElementById('videoStream');
+        if (data.stopped_by_detection) {
+            banner.textContent = 'STOPPED — ' + (data.stop_reason || 'Object detected');
+            banner.classList.add('active');
+            streamImg.classList.add('stopped');
+        } else {
+            banner.classList.remove('active');
+            streamImg.classList.remove('stopped');
+        }
+
+        const status = document.getElementById('model-status');
+        if (data.model_loaded) {
+            status.className = 'model-status ok';
+            status.textContent = 'Model loaded';
+        } else {
+            status.className = 'model-status err';
+            status.textContent = 'Model not loaded';
+        }
+
+        if (!_sliderDirty && data.conf_threshold != null) {
+            const slider = document.getElementById('conf-slider');
+            slider.value = data.conf_threshold;
+            document.getElementById('conf-value').textContent = data.conf_threshold.toFixed(2);
+        }
+
+        const dets = data.detections || [];
+        document.getElementById('det-count').textContent = dets.length ? dets.length + ' found' : '';
+        const list = document.getElementById('detections');
+        list.innerHTML = dets.length === 0
+            ? '<div class="empty-state">No detections</div>'
+            : dets.map(d =>
+                `<div class="det-row">
+                    <span class="det-class">${d.class}</span>
+                    <span class="det-score">${d.score.toFixed(2)}</span>
+                    <span class="det-bbox">[${d.bbox.join(', ')}]</span>
+                </div>`
+            ).join('');
+    } catch (e) {}
+}
+
+setInterval(pollDetection, 500);
+pollDetection();
 
 // ── Node controls ─────────────────────────────────────────────────────────────
 
