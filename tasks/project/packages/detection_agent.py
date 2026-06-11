@@ -58,7 +58,7 @@ class ObjectDetectionAgent:
         self.trt_building     = False
         self._trt_build_start = None
 
-        self._load_model()
+        threading.Thread(target=self._load_model, daemon=True).start()
 
     @staticmethod
     def _resolve_model_path(model_path: str) -> str:
