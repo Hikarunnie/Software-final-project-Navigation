@@ -1,0 +1,4 @@
+train: /home/noklon/Projects/PythonProjects/KvatiTown/tasks/object_detection/dataset/train/images
+val: /home/noklon/Projects/PythonProjects/KvatiTown/tasks/object_detection/dataset/val/images
+nc: 3
+names: ['duckie', 'truck', 'sign']

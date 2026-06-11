@@ -10,30 +10,34 @@ IMAGE_SIZE = 416
 
 
 def convert_labelme_json(json_path: str, img_w: int, img_h: int) -> List[str]:
-    with open(json_path) as f:
+    with open(json_path, 'r') as f:
         data = json.load(f)
 
-    lines = []
-    for shape in data["shapes"]:
-        label = shape["label"]
+    yolo_annotations = []
+
+    for shape in data.get("shapes", []):
+        label = shape.get("label")
         if label not in CLASSES:
             continue
 
         cls_id = CLASSES.index(label)
-        (x1, y1), (x2, y2) = shape["points"]
-        xmin, xmax = min(x1, x2), max(x1, x2)
-        ymin, ymax = min(y1, y2), max(y1, y2)
 
-        xmin_s = xmin * IMAGE_SIZE / img_w
-        xmax_s = xmax * IMAGE_SIZE / img_w
-        ymin_s = ymin * IMAGE_SIZE / img_h
-        ymax_s = ymax * IMAGE_SIZE / img_h
+        points = shape.get("points")
+        if not points or len(points) < 2:
+            continue
 
-        cx = (xmin_s + xmax_s) / 2 / IMAGE_SIZE
-        cy = (ymin_s + ymax_s) / 2 / IMAGE_SIZE
-        w  = (xmax_s - xmin_s) / IMAGE_SIZE
-        h  = (ymax_s - ymin_s) / IMAGE_SIZE
+        p1, p2 = points[0], points[1]
 
-        lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+        xmin = min(p1[0], p2[0]) * IMAGE_SIZE / img_w
+        xmax = max(p1[0], p2[0]) * IMAGE_SIZE / img_w
+        ymin = min(p1[1], p2[1]) * IMAGE_SIZE / img_h
+        ymax = max(p1[1], p2[1]) * IMAGE_SIZE / img_h
 
-    return lines
+        cx = (xmin + xmax) / 2 / IMAGE_SIZE
+        cy = (ymin + ymax) / 2 / IMAGE_SIZE
+        w  = (xmax - xmin) / IMAGE_SIZE
+        h  = (ymax - ymin) / IMAGE_SIZE
+
+        yolo_annotations.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+
+    return yolo_annotations
