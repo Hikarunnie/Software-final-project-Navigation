@@ -28,7 +28,7 @@ APPROACH_SPEED     = 0.10
 CREEP_SPEED        = 0.06
 FORWARD_CLEAR_TIME = 1
 TURN_SPEED         = 0.20
-TURN_TIME_FORWARD  = 0.22
+TURN_TIME_FORWARD  = 0.02
 TURN_TIME_LEFT     = 0.14
 TURN_TIME_RIGHT    = 0.15
 EXIT_SPEED         = 0.10
@@ -42,7 +42,11 @@ TURN_TIMES = {
 
 RED_WINDOW_SIZE  = 12
 RED_VOTE_THRESH  = 0.65
-RED_ARM_FRAMES   = 32
+RED_CLEAR_FRAMES = 5   # consecutive red-free frames before detection re-arms
+                       # after a crossing — waits for the previous intersection's
+                       # red lines to actually leave the view instead of counting
+                       # a fixed number of frames, so a short edge (e.g. 3→2)
+                       # can't carry the robot past the next stop line while blind
 
 CLASS_NAMES  = {0: 'duckie', 1: 'truck', 2: 'sign'}
 CLASS_COLORS = {0: (0, 215, 255), 1: (180, 100, 220), 2: (50, 205, 50)}
@@ -421,7 +425,8 @@ class NavigationAgent:
         self.state              = "driving"
         self.current_route      = None
         self._red_window        = deque(maxlen=RED_WINDOW_SIZE)
-        self._driving_frames    = 0
+        self._red_armed         = True
+        self._red_clear_frames  = 0
         self.last_state         = None
         self._route_initialized = False
         self.last_detections    = []
@@ -450,7 +455,8 @@ class NavigationAgent:
         self.state              = "driving"
         self.current_route      = None
         self._red_window        = deque(maxlen=RED_WINDOW_SIZE)
-        self._driving_frames    = 0
+        self._red_armed         = True
+        self._red_clear_frames  = 0
         self.last_state         = None
         self._route_initialized = False
         self.last_detections    = []
@@ -539,7 +545,10 @@ class NavigationAgent:
                 update_heading(direction)
                 self._advance_node()
                 self.current_route   = None
-                self._driving_frames = -100  # ignore red lines for 2s after crossing (50Hz * 2)
+                # Disarm red detection until the crossed intersection's red
+                # lines have left the camera view (re-armed while driving)
+                self._red_armed        = False
+                self._red_clear_frames = 0
                 self._red_window.clear()
                 self.lane_follower.reset()
                 self.last_detections = []
@@ -557,9 +566,6 @@ class NavigationAgent:
         # ── DRIVING ───────────────────────────────────────────────────────────
         if self.state == "driving":
             left, right = self.lane_follower.compute_commands(frame_bgr)
-
-            self._driving_frames += 1
-            armed = self._driving_frames >= RED_ARM_FRAMES
 
             # ── Object detection — stop if something is in the way ────────────
             obj_stop, obj_reason = self._run_detection(frame_bgr)
@@ -579,10 +585,20 @@ class NavigationAgent:
                     )
                 return True
 
-            if not armed:
+            red_detected, red_mask = detect_red_line(frame_bgr)
+
+            if not self._red_armed:
+                # Wait for the previous intersection's red lines to disappear
+                # before hunting for the next stop line
+                if red_detected:
+                    self._red_clear_frames = 0
+                else:
+                    self._red_clear_frames += 1
+                    if self._red_clear_frames >= RED_CLEAR_FRAMES:
+                        self._red_armed = True
+                        print("[Agent] Red line detection re-armed")
                 wheels.set_wheels_speed(left, right)
             else:
-                red_detected, red_mask = detect_red_line(frame_bgr)
                 confirmed = self._red_vote(red_detected)
 
                 vote_fraction = sum(self._red_window) / max(len(self._red_window), 1)
@@ -595,7 +611,6 @@ class NavigationAgent:
                 if confirmed:
                     wheels.set_wheels_speed(0.0, 0.0)
                     self._red_window.clear()
-                    self._driving_frames = 0
 
                     # ── First red line: initialise route and count edges ───────
                     if not self._route_initialized:
