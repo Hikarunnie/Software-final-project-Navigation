@@ -119,6 +119,11 @@ _CONTENT = '''
             </div>
 
             <div class="card">
+                <div class="card-header">Object Detection</div>
+                <div id="model-status" class="model-status building">Loading&hellip;</div>
+            </div>
+
+            <div class="card">
                 <div class="card-header">Mode</div>
                 <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
                     <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
@@ -231,6 +236,11 @@ _EXTRA_CSS = '''
 .hsv-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
 .hsv-section-title.yellow { color: #f1c40f; }
 .hsv-section-title.white  { color: #ecf0f1; }
+
+.model-status { padding: 6px 10px; border-radius: 4px; font-size: 12px; }
+.model-status.ok      { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.3);  color: var(--accent-green); }
+.model-status.err     { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--accent-red); }
+.model-status.building{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
 '''
 
 _EXTRA_JS = '''
@@ -380,12 +390,33 @@ setInterval(() => { if (manualMode && Object.values(keyState).some(Boolean)) sen
 
 // ── Status polling ────────────────────────────────────────────────────────────
 
+// Detector fields are shown in the Object Detection chip, not the status table
+const DETECTION_KEYS = ['model_loaded', 'load_error', 'trt_building',
+                        'trt_build_elapsed', 'detection_backend'];
+
+function updateModelStatus(data) {
+    const el = document.getElementById('model-status');
+    if (!el) return;
+    if (data.trt_building) {
+        el.className = 'model-status building';
+        el.textContent = 'Building TensorRT engine… (' + (data.trt_build_elapsed || 0) + 's)';
+    } else if (data.model_loaded) {
+        el.className = 'model-status ok';
+        el.textContent = 'Model loaded' +
+            (data.detection_backend ? ' (' + data.detection_backend + ')' : '');
+    } else {
+        el.className = 'model-status err';
+        el.textContent = data.load_error || 'Model not loaded';
+    }
+}
+
 function refreshStatus() {
     fetch('/status')
         .then(r => r.json())
         .then(data => {
+            updateModelStatus(data);
             const table = document.getElementById('statusTable');
-            const keys = Object.keys(data);
+            const keys = Object.keys(data).filter(k => !DETECTION_KEYS.includes(k));
             if (keys.length === 0) {
                 table.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px 0;">No data</div>';
                 return;

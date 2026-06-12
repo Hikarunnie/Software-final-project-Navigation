@@ -1,5 +1,6 @@
 import time
 import os
+import threading
 import cv2
 import numpy as np
 from collections import deque
@@ -7,6 +8,15 @@ from collections import deque
 from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from tasks.project.packages.road_map import road_map
 from tasks.project.packages.optimal_path import dijkstra
+
+try:
+    from tasks.object_detection.packages.agent import (
+        ObjectDetectionAgent, CLASS_NAMES, CLASS_COLORS,
+    )
+except Exception as _e:
+    ObjectDetectionAgent = None
+    CLASS_NAMES, CLASS_COLORS = {}, {}
+    print(f"[Agent] Object detection unavailable: {_e}", flush=True)
 
 server      = None
 debug_frame = None
@@ -48,7 +58,7 @@ TURN_SPEED  = 0.20  if not _IS_REAL else 0.1
 # ── Timings ───────────────────────────────────────────────────────────────────
 
 # How long (seconds) to creep forward over the red line before starting the turn
-FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 2.0
+FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 0.8
 
 # Maximum seconds to drive forward after a turn while searching for lane lines.
 # If lane is found earlier (300px detected), exits immediately.
@@ -75,6 +85,26 @@ RED_VOTE_THRESH = 0.65
 RED_ARM_FRAMES  = 18   # frames to drive before red line detection is armed
 RED_REARM_FRAMES = 45  # frames to ignore red lines after finishing a crossing
                        # (prevents triggering on the same intersection's other lines)
+
+# ── Object detection ──────────────────────────────────────────────────────────
+# Classes that make the robot stop: 0 = duckie, 1 = truck (other robots).
+# Signs (2) are detected and drawn in the debug view but never block driving.
+OBSTACLE_CLASSES  = (0, 1)
+
+# Ignore detections with a bbox smaller than this (px²) — too far away to matter
+OBSTACLE_MIN_AREA = 2500
+
+# Bottom edge of the bbox must reach below this fraction of the frame height,
+# otherwise the object is far ahead (or not on the road) and we keep driving
+OBSTACLE_ZONE_Y   = 0.45
+
+# Horizontal band (fractions of frame width) the bbox centre must fall inside —
+# objects outside it are in the oncoming lane / off the road
+OBSTACLE_ZONE_X   = (0.15, 0.85)
+
+# Consecutive frames with / without an obstacle before stopping / resuming
+OBSTACLE_STOP_FRAMES  = 2
+OBSTACLE_CLEAR_FRAMES = 8
 
 # ============================================================================
 # RED LINE DETECTION
@@ -122,6 +152,19 @@ def detect_red_line(image):
 # ============================================================================
 # DEBUG FRAME
 # ============================================================================
+
+def draw_detections(frame_bgr, detections):
+    if not detections:
+        return frame_bgr
+    out = frame_bgr.copy()
+    for (x1, y1, x2, y2), score, cls_id in detections:
+        color = CLASS_COLORS.get(cls_id, (255, 255, 255))
+        name  = CLASS_NAMES.get(cls_id, str(cls_id))
+        cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(out, f"{name} {score:.2f}", (x1, max(14, y1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    return out
+
 
 def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, error):
     if raw_bgr is None:
@@ -319,6 +362,23 @@ class NavigationAgent:
         self._red_window      = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames  = 0
         self._route_initialized = False
+
+        # Object detection runs in a background thread so inference never
+        # blocks the control loop; the loop just reads the latest results.
+        self.detector          = None
+        self._det_lock         = threading.Lock()
+        self._det_frame        = None
+        self._detections       = []
+        self._obstacle_streak  = 0
+        self._clear_streak     = 0
+        self._obstacle_stopped = False
+        if ObjectDetectionAgent is not None:
+            try:
+                self.detector = ObjectDetectionAgent()
+                threading.Thread(target=self._detection_worker, daemon=True).start()
+            except Exception as e:
+                print(f"[Agent] Object detection init failed: {e}", flush=True)
+
         _reset_heading()
 
     def reset(self):
@@ -331,7 +391,78 @@ class NavigationAgent:
         self._red_window        = deque(maxlen=RED_WINDOW_SIZE)
         self._driving_frames    = 0
         self._route_initialized = False
+        self._obstacle_streak   = 0
+        self._clear_streak      = 0
+        self._obstacle_stopped  = False
+        with self._det_lock:
+            self._det_frame  = None
+            self._detections = []
         _reset_heading()
+
+    def _detection_worker(self):
+        while True:
+            with self._det_lock:
+                frame = self._det_frame
+                self._det_frame = None
+            if frame is None:
+                time.sleep(0.01)
+                continue
+            try:
+                dets = self.detector.detect(frame)
+            except Exception as e:
+                print(f"[Agent] Detection error: {e}", flush=True)
+                dets = None
+            # None means the frame was skipped (NUMBER_FRAMES_SKIPPED) —
+            # keep the previous results in that case
+            if dets is not None:
+                with self._det_lock:
+                    self._detections = dets
+
+    @staticmethod
+    def _is_obstacle(det, w, h):
+        (x1, y1, x2, y2), _score, cls_id = det
+        if cls_id not in OBSTACLE_CLASSES:
+            return False
+        if (x2 - x1) * (y2 - y1) < OBSTACLE_MIN_AREA:
+            return False
+        if y2 < h * OBSTACLE_ZONE_Y:
+            return False
+        cx = (x1 + x2) / 2.0
+        return w * OBSTACLE_ZONE_X[0] <= cx <= w * OBSTACLE_ZONE_X[1]
+
+    def _set_leds(self, leds, color):
+        if leds is None:
+            return
+        try:
+            if color is None:
+                leds.all_off()
+            else:
+                for led in (0, 2, 3, 4):
+                    leds.set_rgb(led, color)
+        except Exception:
+            pass
+
+    def _update_obstacle(self, detections, w, h, leds):
+        """Returns True while the robot should stay stopped for an obstacle."""
+        blocking = [d for d in detections if self._is_obstacle(d, w, h)]
+        if blocking:
+            self._obstacle_streak += 1
+            self._clear_streak     = 0
+        else:
+            self._clear_streak    += 1
+            self._obstacle_streak  = 0
+
+        if self._obstacle_stopped:
+            if self._clear_streak >= OBSTACLE_CLEAR_FRAMES:
+                self._obstacle_stopped = False
+                print("[Agent] Obstacle cleared — resuming", flush=True)
+                self._set_leds(leds, None)
+        elif self._obstacle_streak >= OBSTACLE_STOP_FRAMES:
+            self._obstacle_stopped = True
+            labels = sorted({CLASS_NAMES.get(d[2], str(d[2])) for d in blocking})
+            print(f"[Agent] Obstacle ahead ({', '.join(labels)}) — stopping", flush=True)
+            self._set_leds(leds, [1.0, 0.0, 0.0])
+        return self._obstacle_stopped
 
     def _transition(self, new_state):
         print(f"[Agent] {self.state} → {new_state}", flush=True)
@@ -358,8 +489,9 @@ class NavigationAgent:
 
     def update(self, frame_bgr, wheels, leds, current_node, goal_node):
         global debug_frame
-        red_mask  = None
-        fsm_phase = None
+        red_mask   = None
+        fsm_phase  = None
+        detections = []
 
         if self.state == "completed":
             wheels.set_wheels_speed(0.0, 0.0)
@@ -394,6 +526,19 @@ class NavigationAgent:
 
         if self.state == "driving":
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+            if self.detector is not None:
+                with self._det_lock:
+                    self._det_frame = frame_rgb
+                    detections      = list(self._detections)
+                h, w = frame_bgr.shape[:2]
+                if self._update_obstacle(detections, w, h, leds):
+                    wheels.set_wheels_speed(0.0, 0.0)
+                    debug_frame = build_debug_frame(
+                        draw_detections(frame_bgr, detections), None, None, None,
+                        self.state, "obstacle", 0.0)
+                    return True
+
             left, right = self.lane_follower.compute_commands(frame_rgb)
 
             di = self.lane_follower.last_debug_info
@@ -446,7 +591,7 @@ class NavigationAgent:
         if frame_bgr is not None:
             di = self.lane_follower.last_debug_info
             debug_frame = build_debug_frame(
-                raw_bgr     = frame_bgr,
+                raw_bgr     = draw_detections(frame_bgr, detections),
                 mask_yellow = di.get('yellow_mask'),
                 mask_white  = di.get('white_mask'),
                 mask_red    = red_mask,

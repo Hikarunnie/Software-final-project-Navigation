@@ -243,6 +243,26 @@ def video():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
+def _detection_status():
+    try:
+        import tasks.project.packages.agent as _ag
+        det = _ag.agent.detector
+    except Exception as e:
+        return {'model_loaded': False, 'load_error': f'Agent import failed: {e}',
+                'trt_building': False}
+    if det is None:
+        return {'model_loaded': False,
+                'load_error':   'Detector not initialized',
+                'trt_building': False}
+    return {
+        'model_loaded':      det.model_loaded,
+        'load_error':        det.load_error,
+        'trt_building':      getattr(det, 'trt_building', False),
+        'trt_build_elapsed': getattr(det, 'trt_build_elapsed', 0),
+        'detection_backend': getattr(det, '_backend', None),
+    }
+
+
 @app.route('/status')
 def status():
     return jsonify({
@@ -251,6 +271,7 @@ def status():
         'left_speed':   round(current_speeds['left'], 2),
         'right_speed':  round(current_speeds['right'], 2),
         'mode':         'manual' if _manual_mode else 'navigation',
+        **_detection_status(),
     })
 
 
