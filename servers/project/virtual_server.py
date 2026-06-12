@@ -3,6 +3,7 @@ import os
 import threading
 import time
 import argparse
+import yaml
 from tasks.project.packages.optimal_path import dijkstra
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,8 +19,10 @@ from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
 from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
 from launcher.ports import find_available_port
-from servers.common import make_frame_generator, shutdown_cleanup, suppress_http_logs
+from servers.common import shutdown_cleanup, suppress_http_logs
 from tasks.introduction.packages import manual_drive
+from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
+from servers.visual_lane_servoing.visualization import create_lane_visualization
 
 app = Flask(__name__)
 
@@ -35,8 +38,15 @@ maneuver_thread = None
 maneuver_stop = threading.Event()
 current_node = 1
 goal_node = 3
-_manual_mode = False
+_manual_mode = True
+_navigation_thread = None
+_navigation_stop = threading.Event()
 
+LANE_HSV_CONFIG_FILE = os.path.join(project_root, 'config', 'lane_servoing_hsv_config.yaml')
+
+def _get_student_module():
+    from tasks.visual_lane_servoing.packages import visual_servoing_activity
+    return visual_servoing_activity
 
 def start_maneuver(fn, *args):
     global maneuver_thread, maneuver_stop
@@ -85,6 +95,44 @@ def control_loop():
             time.sleep(0.1)
 
     print("[ControlLoop] Stopped")
+
+
+def start_navigation():
+    """Start the autonomous navigation thread."""
+    global _navigation_thread, _navigation_stop
+    import tasks.project.packages.agent as agent
+
+    if _navigation_thread and _navigation_thread.is_alive():
+        print("[Navigation] Already running")
+        return
+
+    print("[Navigation] Starting navigation loop...")
+    _navigation_stop.clear()
+    import servers.project.virtual_server as _self
+    _navigation_thread = threading.Thread(
+        target=agent.main,
+        args=(camera, wheels, None, _navigation_stop, _self),
+        daemon=True,
+        name='NavigationThread'
+    )
+    _navigation_thread.start()
+
+
+def stop_navigation():
+    """Stop the autonomous navigation thread."""
+    global _navigation_thread, _navigation_stop
+
+    if not _navigation_thread or not _navigation_thread.is_alive():
+        print("[Navigation] Not running")
+        return
+
+    print("[Navigation] Stopping navigation loop...")
+    _navigation_stop.set()
+    _navigation_thread.join(timeout=2.0)
+    if _navigation_thread.is_alive():
+        print("[Navigation] Warning: Navigation thread still alive after timeout")
+    else:
+        print("[Navigation] Navigation stopped")
 
 
 _DANCE_COLORS = [
@@ -142,6 +190,7 @@ def dance(duration_sec, stop_ev):
     _set_leds({idx: [0, 0, 0] for idx in led_indices})
     print("[Dance] Done")
 
+_vls_agent = LaneServoingAgent()
 
 def create_visualization(frame):
     global current_speeds, keys_pressed, student_code_works
@@ -152,7 +201,7 @@ def create_visualization(frame):
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
         return placeholder
 
-    display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    display = frame.copy()
     h, w = display.shape[:2]
     display_w = 640
     display_h = int(h * display_w / w)
@@ -190,8 +239,41 @@ def create_visualization(frame):
 
     return display
 
+def generate_frames():
+    """
+    MJPEG generator for /video.
+    - Mod: Always use lane servoing visualization regardless of mode.
+    """
+    while True:
+        try:
+            display = None
+            if camera is not None:
+                ok, raw_rgb = camera.read_rgb()
+                if ok and raw_rgb is not None:
+                    raw_bgr = cv2.cvtColor(raw_rgb, cv2.COLOR_RGB2BGR)
+                    _vls_agent.compute_commands(raw_rgb)
+                    vis = create_lane_visualization(
+                        raw_bgr,
+                        _vls_agent.last_debug_info,
+                        current_speeds['left'],
+                        current_speeds['right']
+                    )
+                    # We can still add the keyboard overlay
+                    display = create_visualization(vis)
 
-generate_frames = make_frame_generator(lambda: camera, create_visualization, quality=70)
+            if display is None:
+                placeholder = np.zeros((240, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, "Waiting for Godot...", (200, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
+                display = placeholder
+
+            ret, jpeg = cv2.imencode('.jpg', display, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ret:
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                       + jpeg.tobytes() + b'\r\n')
+        except Exception as e:
+            print(f"[VideoStream] Error: {e}")
+        time.sleep(0.033)
 
 
 @app.route('/')
@@ -201,6 +283,28 @@ def index():
         subtitle="Duckiebot navigation task",
     )
 
+@app.route('/get_hsv')
+def get_hsv():
+    return jsonify(_get_student_module().get_hsv_bounds())
+
+@app.route('/update_hsv', methods=['POST'])
+def update_hsv():
+    data = request.json
+    mod = _get_student_module()
+    current = mod.get_hsv_bounds()
+    current.update({k: int(v) for k, v in data.items()})
+    mod.set_hsv_bounds(
+        [current['yellow_lower_h'], current['yellow_lower_s'], current['yellow_lower_v']],
+        [current['yellow_upper_h'], current['yellow_upper_s'], current['yellow_upper_v']],
+        [current['white_lower_h'],  current['white_lower_s'],  current['white_lower_v']],
+        [current['white_upper_h'],  current['white_upper_s'],  current['white_upper_v']],
+    )
+    try:
+        with open(LANE_HSV_CONFIG_FILE, 'w') as f:
+            yaml.dump(current, f, default_flow_style=False)
+    except Exception as e:
+        print(f"[Project] Could not save HSV config: {e}")
+    return jsonify({'status': 'ok'})
 
 @app.route('/video')
 def video():
@@ -236,7 +340,14 @@ def set_mode():
     _manual_mode = bool(request.json.get('manual', False))
     if not _manual_mode and wheels:
         wheels.set_wheels_speed(0.0, 0.0)
-    print(f"[Mode] {'Manual Drive' if _manual_mode else 'Navigation'}")
+
+    if _manual_mode:
+        print(f"[Mode] Manual Drive - stopping navigation")
+        stop_navigation()
+    else:
+        print(f"[Mode] Autonomous Navigation - starting agent")
+        start_navigation()
+
     return jsonify({'status': 'ok', 'manual': _manual_mode})
 
 
@@ -341,18 +452,42 @@ def set_goal():
         'status': 'ok',
         'node': goal_node,
         'path': route['path'],
-        'distance': route['distance'] if route['path'] else None  # inf breaks JSON
+        'distance': route['distance'] if route['path'] else None
     })
+
+
 @app.route('/route')
 def route():
     result = dijkstra(current_node, goal_node)
     if not result['path']:
-        result['distance'] = None 
+        result['distance'] = None
     return jsonify(result)
+
 
 @app.route('/get_goal')
 def get_goal():
     return jsonify({'node': goal_node})
+
+
+def _detection_status():
+    try:
+        import tasks.project.packages.agent as _ag
+        det = _ag.agent.detector
+    except Exception as e:
+        return {'model_loaded': False, 'load_error': f'Agent import failed: {e}',
+                'trt_building': False}
+    if det is None:
+        return {'model_loaded': False,
+                'load_error':   'Detector not initialized',
+                'trt_building': False}
+    return {
+        'model_loaded':      det.model_loaded,
+        'load_error':        det.load_error,
+        'trt_building':      getattr(det, 'trt_building', False),
+        'trt_build_elapsed': getattr(det, 'trt_build_elapsed', 0),
+        'detection_backend': getattr(det, '_backend', None),
+    }
+
 
 @app.route('/status')
 def status():
@@ -362,6 +497,7 @@ def status():
         'left_speed': round(current_speeds['left'], 2),
         'right_speed': round(current_speeds['right'], 2),
         'mode': 'manual' if _manual_mode else 'navigation',
+        **_detection_status(),
     })
 
 
@@ -411,6 +547,10 @@ def main():
     print("=" * 60 + "\n")
 
     try:
+        _manual_mode = True
+        if wheels:
+            wheels.set_wheels_speed(0.0, 0.0)
+        print("[Mode] Starting in Manual mode")
         app.run(host='127.0.0.1', port=web_port, debug=False, threaded=True)
     except KeyboardInterrupt:
         print("\n\nShutting down...")

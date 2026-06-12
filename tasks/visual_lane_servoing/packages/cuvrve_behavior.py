@@ -4,27 +4,24 @@ import numpy as np
 
 def detect_curve(
     yellow_xs: List[int],
-    white_xs: List[int],
+    white_xs:  List[int],
     curve_threshold: int = 350,
 ) -> Tuple[bool, int]:
-    # Prefer yellow if available, otherwise fallback to white
-    xs = None
-    if len(yellow_xs) > 1:
-        xs = yellow_xs
-    elif len(white_xs) > 1:
-        xs = white_xs
-    else:
-        return False, 0  # not enough data
+    """
+    xs[0] is nearest to the robot; xs[-1] is farthest ahead.
+    A curve is detected when a line shifts by more than `curve_threshold`
+    pixels between the nearest and farthest slice.
+    Returns (is_curve, direction) where direction: +1 = right, -1 = left, 0 = none.
+    """
+    shift = None
 
-    # Near vs far points
-    x_near = xs[0]
-    x_far = xs[-1]
+    if len(yellow_xs) >= 2:
+        shift = yellow_xs[-1] - yellow_xs[0]   # positive = line drifts right → left curve
+    elif len(white_xs) >= 2:
+        shift = white_xs[-1] - white_xs[0]
 
-    shift = x_far - x_near
+    if shift is None or abs(shift) < curve_threshold:
+        return False, 0
 
-    # Detect curve
-    if abs(shift) > curve_threshold:
-        direction = 1 if shift > 0 else -1
-        return True, direction
-
-    return False, 0
+    direction = 1 if shift > 0 else -1
+    return True, direction

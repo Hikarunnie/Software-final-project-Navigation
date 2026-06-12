@@ -53,7 +53,7 @@ def get_nodes_and_edges(godot_scene_name: str) -> Tuple[Dict, Dict]:
   nodes = {}
   node_id_counter = 1
   for (gx, gy), data in grid.items():
-    if "cross" in data["type"] or "curve" in data["type"]:
+    if "cross" in data["type"]:
       intersections[(gx, gy)] = node_id_counter
       # Using math rounding to 2 decimal places to keep x and y clean
       x_val = round(float(data["rx"]), 2)

@@ -77,4 +77,5 @@ def dijkstra(start, goal, graph=road_map):
 if __name__ == "__main__":
     print("Dijkstra 1 -> 3:", dijkstra(1, 3))
     print("Dijkstra 3 -> 1:", dijkstra(3, 1))
+    print("Dijkstra 1 -> 2:", dijkstra(1, 2))
     print("Same node:", dijkstra(3, 3))

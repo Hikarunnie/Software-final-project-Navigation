@@ -8,6 +8,103 @@ _CONTENT = '''
 
         <div class="controls-section">
 
+            <!-- HSV Calibration card -->
+            <div class="card">
+                <div class="card-header">HSV Color Calibration</div>
+
+                <div class="hsv-section-title yellow">Yellow Line (left / dashed)</div>
+
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue Low</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowH" min="0" max="179" value="20" class="slider">
+                        <input type="number" id="yLowH-input" min="0" max="179" value="20" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue High</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighH" min="0" max="179" value="40" class="slider">
+                        <input type="number" id="yHighH-input" min="0" max="179" value="40" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowS" min="0" max="255" value="80" class="slider">
+                        <input type="number" id="yLowS-input" min="0" max="255" value="80" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighS" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="yHighS-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yLowV" min="0" max="255" value="100" class="slider">
+                        <input type="number" id="yLowV-input" min="0" max="255" value="100" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="yHighV" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="yHighV-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+
+                <div class="hsv-section-title white" style="margin-top:20px">White Line (right / solid)</div>
+
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue Low</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowH" min="0" max="179" value="0" class="slider">
+                        <input type="number" id="wLowH-input" min="0" max="179" value="0" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Hue High</span><span style="color:var(--text-muted)">0-179</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighH" min="0" max="179" value="179" class="slider">
+                        <input type="number" id="wHighH-input" min="0" max="179" value="179" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowS" min="0" max="255" value="0" class="slider">
+                        <input type="number" id="wLowS-input" min="0" max="255" value="0" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Saturation High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighS" min="0" max="255" value="40" class="slider">
+                        <input type="number" id="wHighS-input" min="0" max="255" value="40" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value Low</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wLowV" min="0" max="255" value="180" class="slider">
+                        <input type="number" id="wLowV-input" min="0" max="255" value="180" class="input-box">
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <div class="slider-label"><span>Value High</span><span style="color:var(--text-muted)">0-255</span></div>
+                    <div class="slider-controls">
+                        <input type="range" id="wHighV" min="0" max="255" value="255" class="slider">
+                        <input type="number" id="wHighV-input" min="0" max="255" value="255" class="input-box">
+                    </div>
+                </div>
+
+                <div id="hsv-status" class="status"></div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     Status
@@ -22,6 +119,11 @@ _CONTENT = '''
             </div>
 
             <div class="card">
+                <div class="card-header">Object Detection</div>
+                <div id="model-status" class="model-status building">Loading&hellip;</div>
+            </div>
+
+            <div class="card">
                 <div class="card-header">Mode</div>
                 <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
                     <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
@@ -31,7 +133,7 @@ _CONTENT = '''
                         <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
                             background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
                             transition:.3s;">
-                            <span style="position:absolute;content:'';height:18px;width:18px;left:2px;bottom:2px;
+                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
                                 background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
                                 id="toggleKnob"></span>
                         </span>
@@ -131,17 +233,97 @@ _EXTRA_CSS = '''
 .key-down  { grid-area: down; }
 .key-left  { grid-area: left; }
 .key-right { grid-area: right; }
+.hsv-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.hsv-section-title.yellow { color: #f1c40f; }
+.hsv-section-title.white  { color: #ecf0f1; }
+
+.model-status { padding: 6px 10px; border-radius: 4px; font-size: 12px; }
+.model-status.ok      { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.3);  color: var(--accent-green); }
+.model-status.err     { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--accent-red); }
+.model-status.building{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
 '''
 
 _EXTRA_JS = '''
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 let manualMode = false;
 
-const keyState = {up: false, down: false, left: false, right: false};
-const keyMap = {
-    'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
-    'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
-    'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
+function postJSON(url, data) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(r => r.json());
+}
+
+function showStatus(id, msg, type) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)';
+    setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+// Set a slider + its paired number input to value v
+function setSliderValue(sliderId, v) {
+    const slider = document.getElementById(sliderId);
+    const input  = document.getElementById(sliderId + '-input');
+    if (slider) slider.value = v;
+    if (input)  input.value  = v;
+}
+
+// Wire up a slider + its number input so they stay in sync, then call onChange
+function syncSliderInput(sliderId, onChange) {
+    const slider = document.getElementById(sliderId);
+    const input  = document.getElementById(sliderId + '-input');
+    if (!slider) return;
+    slider.addEventListener('input', function () {
+        if (input) input.value = this.value;
+        onChange();
+    });
+    if (input) {
+        input.addEventListener('change', function () {
+            if (slider) slider.value = this.value;
+            onChange();
+        });
+    }
+}
+
+// ── HSV sliders ───────────────────────────────────────────────────────────────
+
+// Map from slider DOM id → server key name
+const HSV_SLIDER_MAP = {
+    'yLowH':  'yellow_lower_h', 'yHighH': 'yellow_upper_h',
+    'yLowS':  'yellow_lower_s', 'yHighS': 'yellow_upper_s',
+    'yLowV':  'yellow_lower_v', 'yHighV': 'yellow_upper_v',
+    'wLowH':  'white_lower_h',  'wHighH': 'white_upper_h',
+    'wLowS':  'white_lower_s',  'wHighS': 'white_upper_s',
+    'wLowV':  'white_lower_v',  'wHighV': 'white_upper_v',
 };
+
+// Wire all HSV sliders
+Object.entries(HSV_SLIDER_MAP).forEach(([sliderId, serverKey]) => {
+    syncSliderInput(sliderId, () => {
+        const val = parseInt(document.getElementById(sliderId).value);
+        const payload = {};
+        payload[serverKey] = val;
+        postJSON('/update_hsv', payload)
+            .then(() => showStatus('hsv-status', 'HSV Updated!', 'success'))
+            .catch(() => showStatus('hsv-status', 'Error', 'error'));
+    });
+});
+
+// Load current HSV values from server once on page load
+fetch('/get_hsv')
+    .then(r => r.json())
+    .then(d => {
+        Object.entries(HSV_SLIDER_MAP).forEach(([sliderId, serverKey]) => {
+            if (d[serverKey] !== undefined) setSliderValue(sliderId, d[serverKey]);
+        });
+    })
+    .catch(() => {});
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
 
 function toggleMode(isManual) {
     manualMode = isManual;
@@ -152,9 +334,20 @@ function toggleMode(isManual) {
     document.getElementById('toggleSlider').style.borderColor = isManual ? 'var(--accent-green)' : 'var(--border-color)';
     document.getElementById('toggleKnob').style.background = isManual ? 'var(--accent-green)' : 'var(--text-muted)';
 
-    postJSON('/set_mode', {manual: isManual}).catch(() => {});
+    postJSON('/set_mode', {manual: isManual})
+        .catch(() => showStatus('modeStatus', 'Server error', 'error'));
+
     if (!isManual) releaseAll();
 }
+
+// ── Keyboard drive ────────────────────────────────────────────────────────────
+
+const keyState = {up: false, down: false, left: false, right: false};
+const keyMap = {
+    'ArrowUp': 'up', 'ArrowDown': 'down', 'ArrowLeft': 'left', 'ArrowRight': 'right',
+    'w': 'up', 's': 'down', 'a': 'left', 'd': 'right',
+    'W': 'up', 'S': 'down', 'A': 'left', 'D': 'right',
+};
 
 function updateKeyDisplay() {
     for (const [key, active] of Object.entries(keyState)) {
@@ -165,15 +358,21 @@ function updateKeyDisplay() {
 
 function sendKeys() {
     if (!manualMode) return;
-    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
-        .catch(() => {});
+    fetch('/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(keyState)
+    }).catch(() => {});
 }
 
 function releaseAll() {
     Object.keys(keyState).forEach(k => keyState[k] = false);
     updateKeyDisplay();
-    fetch('/keys', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(keyState)})
-        .catch(() => {});
+    fetch('/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(keyState)
+    }).catch(() => {});
 }
 
 document.addEventListener('keydown', e => {
@@ -189,14 +388,37 @@ document.addEventListener('keyup', e => {
 window.addEventListener('blur', releaseAll);
 setInterval(() => { if (manualMode && Object.values(keyState).some(Boolean)) sendKeys(); }, 150);
 
+// ── Status polling ────────────────────────────────────────────────────────────
+
+// Detector fields are shown in the Object Detection chip, not the status table
+const DETECTION_KEYS = ['model_loaded', 'load_error', 'trt_building',
+                        'trt_build_elapsed', 'detection_backend'];
+
+function updateModelStatus(data) {
+    const el = document.getElementById('model-status');
+    if (!el) return;
+    if (data.trt_building) {
+        el.className = 'model-status building';
+        el.textContent = 'Building TensorRT engine… (' + (data.trt_build_elapsed || 0) + 's)';
+    } else if (data.model_loaded) {
+        el.className = 'model-status ok';
+        el.textContent = 'Model loaded' +
+            (data.detection_backend ? ' (' + data.detection_backend + ')' : '');
+    } else {
+        el.className = 'model-status err';
+        el.textContent = data.load_error || 'Model not loaded';
+    }
+}
+
 function refreshStatus() {
     fetch('/status')
         .then(r => r.json())
         .then(data => {
+            updateModelStatus(data);
             const table = document.getElementById('statusTable');
-            const keys = Object.keys(data);
+            const keys = Object.keys(data).filter(k => !DETECTION_KEYS.includes(k));
             if (keys.length === 0) {
-                table.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px 0;">get_ui_data() returned {}</div>';
+                table.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px 0;">No data</div>';
                 return;
             }
             table.innerHTML = keys.map(k =>
@@ -212,26 +434,30 @@ function refreshStatus() {
         });
 }
 
-function sendDance() {
-    postJSON('/maneuver', {type: 'dance', value: 3.0})
-        .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
-        .catch(e => showStatus('danceStatus', 'Error: ' + e, 'error'));
-}
+refreshStatus();
+setInterval(refreshStatus, 500);
+
+// ── Node controls ─────────────────────────────────────────────────────────────
 
 function setStartNode() {
     const node = parseInt(document.getElementById('startNode').value);
     postJSON('/set_start', {node})
-        .then(r => showStatus('startStatus', 'Start node set to ' + r.node, 'success'))
-        .catch(e => showStatus('startStatus', 'Error: ' + e, 'error'));
+        .then(r => showStatus('startStatus', 'Start set to ' + r.node, 'success'))
+        .catch(() => showStatus('startStatus', 'Error', 'error'));
 }
 
 function setGoalNode() {
     const node = parseInt(document.getElementById('goalNode').value);
     postJSON('/set_goal', {node})
-        .then(r => showStatus('goalStatus', 'End node set to ' + r.node, 'success'))
-        .catch(e => showStatus('goalStatus', 'Error: ' + e, 'error'));
+        .then(r => {
+            let msg = 'Goal set to ' + r.node;
+            if (r.path) msg += '  Path: ' + r.path.join(' → ');
+            showStatus('goalStatus', msg, 'success');
+        })
+        .catch(() => showStatus('goalStatus', 'Error', 'error'));
 }
 
+// Pre-fill selects from server
 fetch('/get_start').then(r => r.json()).then(d => {
     document.getElementById('startNode').value = d.node;
 }).catch(() => {});
@@ -240,8 +466,13 @@ fetch('/get_goal').then(r => r.json()).then(d => {
     document.getElementById('goalNode').value = d.node;
 }).catch(() => {});
 
-refreshStatus();
-setInterval(refreshStatus, 500);
+// ── Dance ─────────────────────────────────────────────────────────────────────
+
+function sendDance() {
+    postJSON('/maneuver', {type: 'dance', value: 3.0})
+        .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started!' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
+        .catch(() => showStatus('danceStatus', 'Error', 'error'));
+}
 '''
 
 
