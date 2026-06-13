@@ -58,20 +58,20 @@ TURN_SPEED  = 0.20  if not _IS_REAL else 0.1
 # ── Timings ───────────────────────────────────────────────────────────────────
 
 # How long (seconds) to creep forward over the red line before starting the turn
-FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 0.8
+FORWARD_CLEAR_TIME = 0.55  if not _IS_REAL else 1.15
 
 # Maximum seconds to drive forward after a turn while searching for lane lines.
 # If lane is found earlier (300px detected), exits immediately.
 EXIT_TIMEOUT = 4.0  if not _IS_REAL else 4.0
 
 # Seconds to drive straight forward through a forward intersection (no turn)
-TURN_TIME_FORWARD = 2  if not _IS_REAL else 1
+TURN_TIME_FORWARD = 2  if not _IS_REAL else 1.4
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 1.1
+TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 1.6
 
 # Seconds to rotate right at an intersection
-TURN_TIME_RIGHT   = 0.15  if not _IS_REAL else 0.8
+TURN_TIME_RIGHT   = 0.15  if not _IS_REAL else 3
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,
