@@ -372,6 +372,7 @@ class NavigationAgent:
         self._obstacle_streak  = 0
         self._clear_streak     = 0
         self._obstacle_stopped = False
+        self._led_mode         = None
         if ObjectDetectionAgent is not None:
             try:
                 self.detector = ObjectDetectionAgent()
@@ -394,6 +395,7 @@ class NavigationAgent:
         self._obstacle_streak   = 0
         self._clear_streak      = 0
         self._obstacle_stopped  = False
+        self._led_mode          = None
         with self._det_lock:
             self._det_frame  = None
             self._detections = []
@@ -430,15 +432,35 @@ class NavigationAgent:
         cx = (x1 + x2) / 2.0
         return w * OBSTACLE_ZONE_X[0] <= cx <= w * OBSTACLE_ZONE_X[1]
 
-    def _set_leds(self, leds, color):
+    def _apply_leds(self, leds, mode):
+        # LED indices: 0=front-left, 2=front-right, 3=back-right, 4=back-left
+        if self._led_mode == mode:
+            return
+        self._led_mode = mode
         if leds is None:
             return
         try:
-            if color is None:
-                leds.all_off()
-            else:
+            if mode == "driving":
                 for led in (0, 2, 3, 4):
-                    leds.set_rgb(led, color)
+                    leds.set_rgb(led, [1.0, 1.0, 1.0])
+            elif mode == "red_stop":
+                leds.set_rgb(0, [1.0, 1.0, 1.0])   # front-left white
+                leds.set_rgb(2, [1.0, 1.0, 1.0])   # front-right white
+                leds.set_rgb(3, [1.0, 0.0, 0.0])   # back-right red
+                leds.set_rgb(4, [1.0, 0.0, 0.0])   # back-left red
+            elif mode == "obstacle":
+                for led in (0, 2, 3, 4):
+                    leds.set_rgb(led, [1.0, 0.0, 0.0])
+            elif mode == "turn_right":
+                leds.set_rgb(2, [1.0, 0.6, 0.0])   # front-right yellow
+                leds.set_rgb(3, [1.0, 0.6, 0.0])   # back-right yellow
+                leds.set_rgb(0, [0.0, 0.0, 0.0])   # front-left off
+                leds.set_rgb(4, [0.0, 0.0, 0.0])   # back-left off
+            elif mode == "turn_left":
+                leds.set_rgb(0, [1.0, 0.6, 0.0])   # front-left yellow
+                leds.set_rgb(4, [1.0, 0.6, 0.0])   # back-left yellow
+                leds.set_rgb(2, [0.0, 0.0, 0.0])   # front-right off
+                leds.set_rgb(3, [0.0, 0.0, 0.0])   # back-right off
         except Exception:
             pass
 
@@ -456,12 +478,12 @@ class NavigationAgent:
             if self._clear_streak >= OBSTACLE_CLEAR_FRAMES:
                 self._obstacle_stopped = False
                 print("[Agent] Obstacle cleared — resuming", flush=True)
-                self._set_leds(leds, None)
+                self._apply_leds(leds, "driving")
         elif self._obstacle_streak >= OBSTACLE_STOP_FRAMES:
             self._obstacle_stopped = True
             labels = sorted({CLASS_NAMES.get(d[2], str(d[2])) for d in blocking})
             print(f"[Agent] Obstacle ahead ({', '.join(labels)}) — stopping", flush=True)
-            self._set_leds(leds, [1.0, 0.0, 0.0])
+            self._apply_leds(leds, "obstacle")
         return self._obstacle_stopped
 
     def _transition(self, new_state):
@@ -503,7 +525,17 @@ class NavigationAgent:
             return False
 
         if self.state == "crossing":
-            fsm_phase     = self.intersection_fsm._phase
+            fsm_phase = self.intersection_fsm._phase
+            fsm_dir   = self.intersection_fsm._direction
+            if fsm_phase == "turn":
+                if fsm_dir == "left":
+                    self._apply_leds(leds, "turn_left")
+                elif fsm_dir == "right":
+                    self._apply_leds(leds, "turn_right")
+                else:
+                    self._apply_leds(leds, "driving")
+            else:
+                self._apply_leds(leds, "driving")
             still_running = self.intersection_fsm.update(wheels, frame_bgr)
             if not still_running:
                 update_heading(self.intersection_fsm._direction)
@@ -539,6 +571,7 @@ class NavigationAgent:
                         self.state, "obstacle", 0.0)
                     return True
 
+            self._apply_leds(leds, "driving")
             left, right = self.lane_follower.compute_commands(frame_rgb)
 
             di = self.lane_follower.last_debug_info
@@ -565,6 +598,7 @@ class NavigationAgent:
                     wheels.set_wheels_speed(left, right + MOTOR_BIAS)
 
                 if confirmed:
+                    self._apply_leds(leds, "red_stop")
                     wheels.set_wheels_speed(0.0, 0.0)
                     self._red_window.clear()
                     self._driving_frames = 0
