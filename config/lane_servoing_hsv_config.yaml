@@ -1,21 +1,13 @@
-# ── Yellow line (centre dashed line) ────────────────────────────────────────
-# Real Duckietown yellow under typical indoor lighting.
-# Hue 18-45 covers warm yellow with margin, WITHOUT bleeding into green/cyan.
-# (Was 18-125, which reached all the way into blue and made the detector pick
-#  up green/neutral junk near the white line and walls.)
-yellow_lower_h: 0
-yellow_lower_s: 80
-yellow_lower_v: 0
-yellow_upper_h: 30
-yellow_upper_s: 255
-yellow_upper_v: 248
-
-# ── White line (right edge solid line) ───────────────────────────────────────
-# White = very low saturation + high brightness. Tighter saturation cap keeps
-# the coloured (pink) walls out of the white mask.
-white_lower_h: 51
+white_lower_h: 0
 white_lower_s: 0
-white_lower_v: 172
+white_lower_v: 137
 white_upper_h: 179
-white_upper_s: 56
+white_upper_s: 179
 white_upper_v: 255
+ 
+yellow_lower_h: 18
+yellow_lower_s: 74
+yellow_lower_v: 49
+yellow_upper_h: 114
+yellow_upper_s: 231
+yellow_upper_v: 240
