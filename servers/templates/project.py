@@ -174,33 +174,7 @@ _CONTENT = '''
                 <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
             </div>
 
-            <div class="card">
-                <div class="card-header">Start Intersection</div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="startNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
-                           border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Intersection 1</option>
-                        <option value="2">Intersection 2</option>
-                        <option value="3">Intersection 3</option>
-                    </select>
-                    <button class="button" onclick="setStartNode()">Set</button>
-                </div>
-                <div id="startStatus" class="status"></div>
-            </div>
 
-            <div class="card">
-                <div class="card-header">End Intersection</div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="goalNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
-                           border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Intersection 1</option>
-                        <option value="2">Intersection 2</option>
-                        <option value="3">Intersection 3</option>
-                    </select>
-                    <button class="button" onclick="setGoalNode()">Set</button>
-                </div>
-                <div id="goalStatus" class="status"></div>
-            </div>
 
             <div class="card">
                 <div class="card-header">Dance Maneuver</div>
@@ -514,35 +488,6 @@ function refreshStatus() {
 
 refreshStatus();
 setInterval(refreshStatus, 500);
-
-// ── Intersection controls ─────────────────────────────────────────────────────
-
-function setStartNode() {
-    const id = parseInt(document.getElementById('startNode').value);
-    postJSON('/set_start', {node: id})
-        .then(r => showStatus('startStatus', 'Start: intersection ' + r.node, 'success'))
-        .catch(() => showStatus('startStatus', 'Error', 'error'));
-}
-
-function setGoalNode() {
-    const id = parseInt(document.getElementById('goalNode').value);
-    postJSON('/set_goal', {node: id})
-        .then(r => {
-            let msg = 'Goal: intersection ' + r.node;
-            if (r.path) msg += '  Path: ' + r.path.join(' → ');
-            showStatus('goalStatus', msg, 'success');
-        })
-        .catch(() => showStatus('goalStatus', 'Error', 'error'));
-}
-
-// Pre-fill selects from server
-fetch('/get_start').then(r => r.json()).then(d => {
-    document.getElementById('startNode').value = d.node;
-}).catch(() => {});
-
-fetch('/get_goal').then(r => r.json()).then(d => {
-    document.getElementById('goalNode').value = d.node;
-}).catch(() => {});
 
 // ── Dance ─────────────────────────────────────────────────────────────────────
 
