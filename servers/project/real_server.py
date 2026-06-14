@@ -62,34 +62,41 @@ def dance(duration_sec, stop_ev):
     print(f"[Dance] Starting for {duration_sec:.1f}s")
     duration = float(np.clip(duration_sec, 0.5, 10.0))
 
+    dance_colors = [
+        [1.0, 0.0, 0.0],  # red
+        [0.0, 0.0, 1.0],  # blue
+        [0.0, 1.0, 0.0],  # green
+    ]
+
+    # Stop and pause before dancing (matching agent behaviour)
     if wheels:
-        wheels.set_wheels_speed(0.8, -0.8)
-        time.sleep(0.6)
-        wheels.set_wheels_speed(0.8, 0.8)
-        time.sleep(1.0)
         wheels.set_wheels_speed(0.0, 0.0)
-        time.sleep(0.1)
+    time.sleep(2.0)
 
     end_time = time.time() + duration
     step = 0
     while not stop_ev.is_set() and time.time() < end_time:
-        if step % 2 == 0:
-            left, right = 0.8, -0.8
-        else:
-            left, right = -0.8, 0.8
+        l, r = (0.8, -0.8) if step % 2 == 0 else (-0.8, 0.8)
         if wheels:
-            wheels.set_wheels_speed(left, right)
+            wheels.set_wheels_speed(l, r)
         if leds:
             try:
-                color = _DANCE_COLORS[step % len(_DANCE_COLORS)]
-                leds.set_led(0, color)
+                color = dance_colors[step % len(dance_colors)]
+                for led in (0, 2, 3, 4):
+                    leds.set_rgb(led, color)
             except Exception:
                 pass
         time.sleep(0.1)
         step += 1
 
+    # Clean up
     if wheels:
         wheels.set_wheels_speed(0.0, 0.0)
+    if leds:
+        try:
+            leds.all_off()
+        except Exception:
+            pass
     print("[Dance] Done")
 
 
