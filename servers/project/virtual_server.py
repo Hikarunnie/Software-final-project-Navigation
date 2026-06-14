@@ -25,6 +25,7 @@ from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from servers.visual_lane_servoing.visualization import create_lane_visualization
 
 app = Flask(__name__)
+app.static_folder = os.path.join(project_root, 'static')
 
 camera = None
 wheels = None
@@ -37,6 +38,7 @@ student_code_works = True
 maneuver_thread = None
 maneuver_stop = threading.Event()
 current_node = 1
+start_direction = 'N'
 goal_node = 3
 _manual_mode = True
 _navigation_thread = None
@@ -421,11 +423,20 @@ def run_maneuver():
     return jsonify({'status': 'error', 'message': 'Unknown maneuver'}), 400
 
 
+@app.route('/nodes_coords')
+def nodes_coords():
+    from tasks.project.packages.road_map import road_map
+    nodes = [{'id': nid, 'x': ndata['x'], 'y': ndata['y']}
+             for nid, ndata in road_map.nodes.items()]
+    return jsonify({'nodes': nodes})
+
 @app.route('/set_start', methods=['POST'])
 def set_start():
-    global current_node
+    global current_node, start_direction
     current_node = int(request.json['node'])
-    return jsonify({'status': 'ok', 'node': current_node})
+    start_direction = request.json.get('direction', 'N')
+    print(f"[Start] Intersection {current_node} direction={start_direction}")
+    return jsonify({'status': 'ok', 'node': current_node, 'direction': start_direction})
 
 @app.route('/get_start')
 def get_start():
@@ -441,8 +452,8 @@ def set_goal():
     print("\n===================")
     print("PATH PLANNER")
     print("===================")
-    print(f"Start: {current_node}")
-    print(f"Goal: {goal_node}")
+    print(f"Start intersection: {current_node}")
+    print(f"Goal intersection: {goal_node}")
     print(f"Path: {route['path']}")
     print(f"Edges: {route['edges']}")
     print(f"Distance: {route['distance']}")
@@ -467,7 +478,6 @@ def route():
 @app.route('/get_goal')
 def get_goal():
     return jsonify({'node': goal_node})
-
 
 def _detection_status():
     try:
