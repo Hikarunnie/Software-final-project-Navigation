@@ -10,7 +10,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
 sys.path.insert(0, project_root)
 
-from flask import Flask, Response, request, jsonify
+from flask import Flask, Response, request, jsonify, send_from_directory
 import cv2
 import numpy as np
 
@@ -277,6 +277,10 @@ def generate_frames():
             print(f"[VideoStream] Error: {e}")
         time.sleep(0.033)
 
+
+@app.route('/config/<path:filename>')
+def serve_config(filename):
+    return send_from_directory(os.path.join(project_root, 'config'), filename)
 
 @app.route('/')
 def index():

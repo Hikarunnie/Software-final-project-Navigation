@@ -9,7 +9,7 @@ script_dir   = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
 sys.path.insert(0, project_root)
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, send_from_directory
 import numpy as np
 import cv2
 
@@ -223,6 +223,10 @@ def stop_navigation():
     _navigation_thread.join(timeout=2.0)
     print("[Navigation] Navigation stopped")
 
+
+@app.route('/config/<path:filename>')
+def serve_config(filename):
+    return send_from_directory(os.path.join(project_root, 'config'), filename)
 
 @app.route('/')
 def index():

@@ -14,7 +14,7 @@ _CONTENT = '''
                     1st click: start point + direction. 2nd click: end point. 3rd click: reset.
                 </p>
                 <div class="standalone-map-container">
-                    <img src="/static/kiu_map.png" alt="Track Map Grid" class="map-grid-underlay">
+                    <img src="/config/kiu_map.png" alt="Track Map Grid" class="map-grid-underlay">
                     <div id="standaloneGridOverlay"></div>
                 </div>
                 <div id="grid-click-status" class="status" style="margin-top: 8px; font-size: 12px;"></div>
@@ -26,6 +26,65 @@ _CONTENT = '''
                         <button class="button" style="flex:1" onclick="setDirection('S')">S</button>
                         <button class="button" style="flex:1" onclick="setDirection('W')">W</button>
                     </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    Status
+                    <span id="statusDot" style="width:8px;height:8px;border-radius:50%;
+                        background:var(--accent-green);display:inline-block;"></span>
+                </div>
+                <div id="statusTable" style="font-size:12px;">
+                    <div style="color:var(--text-muted);text-align:center;padding:12px 0;">
+                        Waiting for data...
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Object Detection</div>
+                <div id="model-status" class="model-status building">Loading&hellip;</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Mode</div>
+                <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
+                    <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
+                    <label style="position:relative;display:inline-block;width:48px;height:26px;">
+                        <input type="checkbox" id="driveToggle" onchange="toggleMode(this.checked)"
+                            style="opacity:0;width:0;height:0;">
+                        <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+                            background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
+                            transition:.3s;">
+                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
+                                background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
+                                id="toggleKnob"></span>
+                        </span>
+                    </label>
+                    <span style="font-size:13px;color:var(--text-secondary);">Manual Drive</span>
+                </div>
+                <div id="modeStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mode: Navigation</div>
+            </div>
+
+            <div class="card" id="driveCard" style="display:none;">
+                <div class="card-header">Drive</div>
+                <div class="key-display">
+                    <div class="key-box key-up"    id="key-up">&#9650;</div>
+                    <div class="key-box key-left"  id="key-left">&#9664;</div>
+                    <div class="key-box key-down"  id="key-down">&#9660;</div>
+                    <div class="key-box key-right" id="key-right">&#9654;</div>
+                </div>
+                <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
+            </div>
+
+
+
+            <div class="card">
+                <div class="card-header">Dance Maneuver</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button class="button" onclick="sendDance()">Dance</button>
+                    <div id="danceStatus" class="status"></div>
                 </div>
             </div>
 
@@ -123,65 +182,6 @@ _CONTENT = '''
                 </div>
 
                 <div id="hsv-status" class="status"></div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    Status
-                    <span id="statusDot" style="width:8px;height:8px;border-radius:50%;
-                        background:var(--accent-green);display:inline-block;"></span>
-                </div>
-                <div id="statusTable" style="font-size:12px;">
-                    <div style="color:var(--text-muted);text-align:center;padding:12px 0;">
-                        Waiting for data...
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Object Detection</div>
-                <div id="model-status" class="model-status building">Loading&hellip;</div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Mode</div>
-                <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
-                    <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
-                    <label style="position:relative;display:inline-block;width:48px;height:26px;">
-                        <input type="checkbox" id="driveToggle" onchange="toggleMode(this.checked)"
-                            style="opacity:0;width:0;height:0;">
-                        <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
-                            background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
-                            transition:.3s;">
-                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
-                                background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
-                                id="toggleKnob"></span>
-                        </span>
-                    </label>
-                    <span style="font-size:13px;color:var(--text-secondary);">Manual Drive</span>
-                </div>
-                <div id="modeStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mode: Navigation</div>
-            </div>
-
-            <div class="card" id="driveCard" style="display:none;">
-                <div class="card-header">Drive</div>
-                <div class="key-display">
-                    <div class="key-box key-up"    id="key-up">&#9650;</div>
-                    <div class="key-box key-left"  id="key-left">&#9664;</div>
-                    <div class="key-box key-down"  id="key-down">&#9660;</div>
-                    <div class="key-box key-right" id="key-right">&#9654;</div>
-                </div>
-                <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
-            </div>
-
-
-
-            <div class="card">
-                <div class="card-header">Dance Maneuver</div>
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                    <button class="button" onclick="sendDance()">Dance</button>
-                    <div id="danceStatus" class="status"></div>
-                </div>
             </div>
 
         </div>
