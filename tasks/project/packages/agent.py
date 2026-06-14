@@ -53,7 +53,7 @@ CREEP_SPEED = 0.06  if not _IS_REAL else 0.3
 EXIT_SPEED  = 0.20  if not _IS_REAL else 0.3
 
 # Speed of each wheel during a left/right rotation at an intersection
-TURN_SPEED  = 0.20  if not _IS_REAL else 0.1
+TURN_SPEED  = 0.20  if not _IS_REAL else 0.35
 
 # ── Timings ───────────────────────────────────────────────────────────────────
 
@@ -68,10 +68,10 @@ EXIT_TIMEOUT = 4.0  if not _IS_REAL else 4.0
 TURN_TIME_FORWARD = 2  if not _IS_REAL else 1.4
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 1.6
+TURN_TIME_LEFT    = 0.04  if not _IS_REAL else 0.5
 
 # Seconds to rotate right at an intersection
-TURN_TIME_RIGHT   = 0.15  if not _IS_REAL else 3
+TURN_TIME_RIGHT   = 0.15  if not _IS_REAL else 0.5
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,

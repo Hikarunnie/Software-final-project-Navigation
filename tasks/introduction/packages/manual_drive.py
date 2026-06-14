@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 SPEED = 1
-TURN = 0.5
+TURN = 0.8
 
 
 def get_motor_speeds(keys_pressed: Dict[str, bool]) -> Tuple[float, float]:
