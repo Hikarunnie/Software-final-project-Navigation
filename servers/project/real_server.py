@@ -362,7 +362,7 @@ def set_start():
 
 @app.route('/get_start')
 def get_start():
-    return jsonify({'node': current_node})
+    return jsonify({'node': current_node, 'direction': start_direction})
 
 @app.route('/get_hsv')
 def get_hsv():

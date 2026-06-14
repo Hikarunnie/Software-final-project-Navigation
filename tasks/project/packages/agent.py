@@ -206,9 +206,16 @@ def build_debug_frame(raw_bgr, mask_yellow, mask_white, mask_red, state, sub, er
 
 _heading = [1.0, 0.0]
 
-def _reset_heading():
+_DIRECTION_TO_HEADING = {
+    'N': [ 0.0, -1.0],
+    'E': [ 1.0,  0.0],
+    'S': [ 0.0,  1.0],
+    'W': [-1.0,  0.0],
+}
+
+def _reset_heading(direction='E'):
     global _heading
-    _heading = [1.0, 0.0]
+    _heading = list(_DIRECTION_TO_HEADING.get(direction, [1.0, 0.0]))
 
 def update_heading(direction):
     global _heading
@@ -352,7 +359,7 @@ class IntersectionFSM:
 # ============================================================================
 
 class NavigationAgent:
-    def __init__(self):
+    def __init__(self, start_direction='E'):
         self.lane_follower    = LaneServoingAgent()
         self.lane_follower._YELLOW_TARGET = 0.30
         self.lane_follower._WHITE_TARGET  = 0.72
@@ -380,9 +387,9 @@ class NavigationAgent:
             except Exception as e:
                 print(f"[Agent] Object detection init failed: {e}", flush=True)
 
-        _reset_heading()
+        _reset_heading(start_direction)
 
-    def reset(self):
+    def reset(self, start_direction='E'):
         print("[Agent] Resetting", flush=True)
         self.lane_follower._prev_error     = 0.0
         self.lane_follower._filtered_error = 0.0
@@ -399,7 +406,7 @@ class NavigationAgent:
         with self._det_lock:
             self._det_frame  = None
             self._detections = []
-        _reset_heading()
+        _reset_heading(start_direction)
 
     def _detection_worker(self):
         while True:
@@ -649,10 +656,11 @@ def main(camera, wheels, leds, stop_event, server_module=None):
     if server_module is not None:
         server = server_module
 
-    agent.reset()
+    start_dir = getattr(server, 'start_direction', 'E')
+    agent.reset(start_dir)
     debug_frame = None
 
-    print(f"[Agent] Started — Start: {server.current_node}  Goal: {server.goal_node}", flush=True)
+    print(f"[Agent] Started — Start: {server.current_node}  Goal: {server.goal_node}  Heading: {_heading}", flush=True)
 
     try:
         while not stop_event.is_set():
