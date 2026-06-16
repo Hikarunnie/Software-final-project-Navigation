@@ -1,4 +1,10 @@
-import godot.utils.map
+try:
+    import godot.utils.map
+
+    _GODOT_AVAILABLE = True
+except ImportError:
+    _GODOT_AVAILABLE = False
+
 
 class RoadMap:
     """
@@ -9,15 +15,73 @@ class RoadMap:
     """
 
     def __init__(self, scene_name="test1_actual_map_kiu"):
-        try:
-            self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
-            print(
-                f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)"
-            )
-        except Exception as e:
-            print(f"[RoadMap] Scene load failed: {e}")
-            self.nodes, self.edges = {}, {}
-    
+        # Try loading from scene file first (works in sim and on real robot if .tscn exists)
+        if _GODOT_AVAILABLE:
+            try:
+                self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
+                if not self.nodes or not self.edges:
+                    raise ValueError("Scene load returned empty nodes/edges")
+                print(
+                    f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)"
+                )
+                return
+            except Exception as e:
+                print(
+                    f"[RoadMap] Scene load failed: {e}, falling back to hardcoded map"
+                )
+        else:
+            print("[RoadMap] godot.utils.map not available, using hardcoded map")
+
+        # Fallback: hardcoded map for real robot
+        self._load_hardcoded()
+
+    def _load_hardcoded(self):
+        """Hardcoded map matching the physical real robot track."""
+        self.nodes = {
+            1: {"id": 1, "x": 2.7, "y": 2.1},
+            2: {"id": 2, "x": 0.9, "y": 4.5},
+            3: {"id": 3, "x": 2.1, "y": 4.5},
+        }
+        self.edges = {
+            "1-3-a": {
+                "from": 1,
+                "to": 3,
+                "length": 13,
+                "direction1": "W",
+                "direction2": "E",
+            },
+            "1-2-a": {
+                "from": 1,
+                "to": 2,
+                "length": 7,
+                "direction1": "N",
+                "direction2": "S",
+            },
+            "1-3-b": {
+                "from": 1,
+                "to": 3,
+                "length": 5,
+                "direction1": "W",
+                "direction2": "E",
+            },
+            "2-3-a": {
+                "from": 2,
+                "to": 3,
+                "length": 2,
+                "direction1": "E",
+                "direction2": "W",
+            },
+            "2-3-b": {
+                "from": 2,
+                "to": 3,
+                "length": 10,
+                "direction1": "E",
+                "direction2": "W",
+            },
+        }
+        print(
+            f"[RoadMap] Hardcoded map loaded ({len(self.nodes)} nodes, {len(self.edges)} edges)"
+        )
 
     def neighbors(self, node_id):
         """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""
