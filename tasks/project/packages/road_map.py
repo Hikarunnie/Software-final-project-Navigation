@@ -22,7 +22,7 @@ class RoadMap:
                 if not self.nodes or not self.edges:
                     raise ValueError("Scene load returned empty nodes/edges")
                 print(
-                    f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)"
+                    f"[RoadMap] Loaded from scene: {scene_name}; \n nodes: {self.nodes}; \n edges: {self.edges}"
                 )
                 return
             except Exception as e:
@@ -47,22 +47,22 @@ class RoadMap:
                 "from": 1,
                 "to": 3,
                 "length": 13,
-                "direction1": "W",
+                "direction1": "E",
                 "direction2": "E",
             },
             "1-2-a": {
                 "from": 1,
                 "to": 2,
                 "length": 7,
-                "direction1": "N",
-                "direction2": "S",
+                "direction1": "W",
+                "direction2": "N",
             },
             "1-3-b": {
                 "from": 1,
                 "to": 3,
                 "length": 5,
-                "direction1": "W",
-                "direction2": "E",
+                "direction1": "S",
+                "direction2": "N",
             },
             "2-3-a": {
                 "from": 2,
@@ -75,8 +75,8 @@ class RoadMap:
                 "from": 2,
                 "to": 3,
                 "length": 10,
-                "direction1": "E",
-                "direction2": "W",
+                "direction1": "S",
+                "direction2": "S",
             },
         }
         print(
