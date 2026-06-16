@@ -43,7 +43,7 @@ student_code_works = True
 maneuver_thread = None
 maneuver_stop = threading.Event()
 current_node = 1
-start_direction = "N"
+start_direction = "E"  # Default robot heading (change via UI grid picker)
 goal_node = 3
 _manual_mode = True
 _navigation_thread = None
@@ -123,9 +123,21 @@ def start_navigation():
         print("[Navigation] Already running")
         return
 
-    print("[Navigation] Starting navigation loop...")
+    # Capture values NOW before any other thread changes them
+    _start = current_node
+    _goal = goal_node
+    _heading = start_direction
+
+    print(
+        f"[Navigation] Starting navigation loop — current_node={_start} goal_node={_goal} heading={_heading}"
+    )
     _navigation_stop.clear()
     import servers.project.virtual_server as _self
+
+    # Set them explicitly so agent reads correct values
+    _self.current_node = _start
+    _self.goal_node = _goal
+    _self.start_direction = _heading
 
     _navigation_thread = threading.Thread(
         target=agent.main,

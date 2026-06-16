@@ -30,7 +30,7 @@ leds = None
 stop_event = threading.Event()
 
 current_node = 1
-start_direction = "N"
+start_direction = "E"  # Default robot heading (change via UI grid picker)
 goal_node = 3
 _manual_mode = True
 _navigation_thread = None
@@ -212,14 +212,16 @@ def start_navigation():
     # Capture node values NOW before any other thread changes them
     _start = current_node
     _goal = goal_node
+    _heading = start_direction
     _navigation_stop.clear()
     import servers.project.real_server as _self
 
     # Set them explicitly so agent reads correct values
     _self.current_node = _start
     _self.goal_node = _goal
+    _self.start_direction = _heading
     print(
-        f"[Navigation] Starting — current_node={_start} goal_node={_goal} (self id={id(_self)})",
+        f"[Navigation] Starting — current_node={_start} goal_node={_goal} heading={_heading} (self id={id(_self)})",
         flush=True,
     )
 
