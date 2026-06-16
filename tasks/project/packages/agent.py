@@ -688,7 +688,7 @@ def main(camera, wheels, leds, stop_event, server_module=None):
     debug_frame = None
 
     print(
-        f"[Agent] Started — Start: {server.current_node}  Goal: {server.goal_node}  Heading: {agent._current_heading}",
+        f"[Agent] Started — Start: {server.current_node}  Goal: {server.goal_node}  Heading: {agent._current_heading}"
         flush=True,
     )
 
