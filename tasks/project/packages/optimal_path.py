@@ -1,5 +1,6 @@
 import heapq
 import math
+from pickletools import optimize
 
 from tasks.project.packages.road_map import road_map
 
@@ -120,3 +121,52 @@ def dijkstra(start, goal, start_heading="N", graph=road_map):
         "directions": directions,
         "distance": distances[goal],
     }
+
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("Testing ALL possible combinations of Dijkstra pathfinding")
+    print("=" * 80)
+    print()
+
+    # All nodes in the graph
+    nodes = [1, 2, 3]
+
+    # All valid headings
+    headings = ["N", "E", "S", "W"]
+
+    # Test all combinations where start != goal
+    combination_count = 0
+
+    for start in nodes:
+        for goal in nodes:
+            if start == goal:
+                continue  # Skip same start/goal
+
+            for heading in headings:
+                combination_count += 1
+                print(f"\n{'─' * 80}")
+                print(
+                    f"Combination #{combination_count}: Start={start}, Goal={goal}, Heading={heading}"
+                )
+                print(f"{'─' * 80}")
+
+                try:
+                    result = dijkstra(start, goal, heading)
+
+                    if result["path"]:
+                        print(f"✓ Path found!")
+                        print(f"  Path:       {' → '.join(map(str, result['path']))}")
+                        print(f"  Edges:      {result['edges']}")
+                        print(f"  Directions: {result['directions']}")
+                        print(f"  Distance:   {result['distance']:.1f}")
+                    else:
+                        print(f"✗ No path found")
+                        print(f"  Distance:   {result['distance']}")
+
+                except Exception as e:
+                    print(f"✗ Error: {e}")
+
+    print(f"\n{'=' * 80}")
+    print(f"Total combinations tested: {combination_count}")
+    print(f"={'=' * 80}\n")
