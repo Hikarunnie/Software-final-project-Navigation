@@ -33,7 +33,7 @@ def get_nodes_and_edges(godot_scene_name: str) -> Tuple[Dict, Dict]:
     Extract intersections as nodes, and roads between them as edges.
     """
     file_name = godot_scene_name + ".tscn"
-    path = launcher.config.GODOT_MAP_DIR / file_name
+    path = launcher.config.MAP_DIR / file_name
     scene: GDScene = godot_parser.load(path)
 
     grid = {}

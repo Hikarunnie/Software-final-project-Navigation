@@ -1,10 +1,4 @@
-try:
-    import godot.utils.map
-
-    _GODOT_AVAILABLE = True
-except ImportError:
-    _GODOT_AVAILABLE = False
-
+import godot.utils.map
 
 class RoadMap:
     """
@@ -15,18 +9,15 @@ class RoadMap:
     """
 
     def __init__(self, scene_name="test1_actual_map_kiu"):
-        if _GODOT_AVAILABLE:
-            try:
-                self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
-                print(
-                    f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)"
-                )
-            except Exception as e:
-                print(f"[RoadMap] Scene load failed: {e}")
-                self.nodes, self.edges = {}, {}
-        else:
-            print("[RoadMap] Godot not available — no map loaded")
+        try:
+            self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
+            print(
+                f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)"
+            )
+        except Exception as e:
+            print(f"[RoadMap] Scene load failed: {e}")
             self.nodes, self.edges = {}, {}
+    
 
     def neighbors(self, node_id):
         """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""

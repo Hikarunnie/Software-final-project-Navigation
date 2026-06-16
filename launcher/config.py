@@ -4,7 +4,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 
 GODOT_DIR = PROJECT_ROOT / 'GodotSimulation' / 'ducky-bot'
-GODOT_MAP_DIR = GODOT_DIR / 'scenes' / 'maps'
+MAP_DIR = PROJECT_ROOT / 'godot' / 'utils' / 'maps'
 SERVERS_DIR = PROJECT_ROOT / 'servers'
 TASKS_DIR = PROJECT_ROOT / 'tasks'
 DUCKIEBOT_DIR = PROJECT_ROOT / 'duckiebot'
