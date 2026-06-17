@@ -6,7 +6,7 @@
     "goal_node": 3
   },
   "lane_control": {
-    "p_gain": 1.25,
+    "p_gain": 1.35,
     "d_gain": 0.25,
     "base_speed": 0.1
   },

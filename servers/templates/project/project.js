@@ -278,7 +278,7 @@ function loadBotConfig() {
         r.status === "ok" ? "success" : "error",
       );
       if (r.status === "ok") {
-        setTimeout(() => location.reload(), 1000);
+        location.reload();
       }
     })
     .catch(() => showStatus("botConfigStatus", "Load failed", "error"));
@@ -301,6 +301,7 @@ function saveBotConfig() {
       if (r.status === "ok") {
         document.getElementById("botNameInput").value = "";
         refreshBotList();
+        location.reload();
       }
     })
     .catch(() => showStatus("botConfigStatus", "Save failed", "error"));
