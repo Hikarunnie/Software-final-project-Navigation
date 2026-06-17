@@ -49,6 +49,8 @@ print(f"[Agent] Running on: {'REAL ROBOT' if _IS_REAL else 'SIMULATION'}", flush
 
 # ── Speeds ────────────────────────────────────────────────────────────────────
 MOTOR_BIAS = 0 if _IS_REAL else 0.0
+TURN_BIAS_LOW = 0 if _IS_REAL else 0.1
+TURN_BIAS_HIGH = 0 if _IS_REAL else 1.8
 # Speed while slowly driving over the red stop line before turning
 CREEP_SPEED = 0.06 if not _IS_REAL else 0.3
 
@@ -71,14 +73,14 @@ EXIT_TIMEOUT = 4.0 if not _IS_REAL else 4.0
 TURN_TIME_FORWARD = 2 if not _IS_REAL else 1.4
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT = 0.04 if not _IS_REAL else 0.3
+TURN_TIME_LEFT = 0.04 if not _IS_REAL else 0.7
 
 # Seconds to rotate right at an intersection
 TURN_TIME_RIGHT = 0.15 if not _IS_REAL else 0.55
 
 # Seconds to rotate for a U-turn (turnaround). Rotates the same direction as a
 # left turn, just held longer so the robot swings ~180° instead of ~90°.
-TURN_TIME_TURNAROUND = 0.08 if not _IS_REAL else 3.2
+TURN_TIME_TURNAROUND = 0.08 if not _IS_REAL else 1.85
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,
@@ -91,7 +93,7 @@ TURN_TIMES = {
 RED_WINDOW_SIZE = 12
 RED_VOTE_THRESH = 0.65
 RED_ARM_FRAMES = 18  # frames to drive before red line detection is armed
-RED_REARM_FRAMES = 45  # frames to ignore red lines after finishing a crossing
+RED_REARM_FRAMES = 20  # frames to ignore red lines after finishing a crossing
 # (prevents triggering on the same intersection's other lines)
 
 # ── Object detection ──────────────────────────────────────────────────────────
@@ -323,10 +325,12 @@ class IntersectionFSM:
         elif self._phase == "turn":
             if self._direction == "forward":
                 wheels.set_wheels_speed(CREEP_SPEED, CREEP_SPEED)
-            elif self._direction in ("left", "turnaround"):
-                wheels.set_wheels_speed(-TURN_SPEED, TURN_SPEED)
+            elif self._direction == "left":
+                wheels.set_wheels_speed(TURN_SPEED*TURN_BIAS_LOW, TURN_SPEED*TURN_BIAS_HIGH)
+            elif self._direction == "turnaround":
+                wheels.set_wheels_speed(TURN_SPEED*TURN_BIAS_LOW, TURN_SPEED*TURN_BIAS_HIGH)
             else:
-                wheels.set_wheels_speed(TURN_SPEED, -TURN_SPEED)
+                wheels.set_wheels_speed(TURN_SPEED*TURN_BIAS_HIGH, TURN_SPEED*TURN_BIAS_LOW)
             if finished:
                 self._enter_phase("exit")
 

@@ -11,7 +11,7 @@ max_steer: 0.2
 min_cruise_speed: 0.23
 min_wheel_speed: 0.08
 # Lower P = gentler corrections, less overshoot.
-p_gain: 0.35
+p_gain: 0.5
 smooth_alpha: 0.6
 steer_smooth: 0.6
 turn_speed_ratio: 0.0
