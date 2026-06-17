@@ -23,7 +23,7 @@ Usage:
 
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ConfigProvider:
@@ -56,16 +56,12 @@ class ConfigProvider:
         config_path = os.path.join(config_dir, f"{bot_name}.json")
         return config_path
 
-    def get_bots(self) -> list[str]:
+    def get_bots(self) -> List[str]:
         """Return list of available bot configuration names."""
         try:
             files = os.listdir(self.config_dir)
             return sorted(
-                [
-                    f.replace(".json", "")
-                    for f in files
-                    if f.endswith(".json")
-                ]
+                [f.replace(".json", "") for f in files if f.endswith(".json")]
             )
         except Exception as e:
             print(f"[ConfigProvider] Error listing bots: {e}")
@@ -192,7 +188,7 @@ class ConfigProvider:
         if goal_node is not None:
             self.set("navigation.goal_node", goal_node)
 
-    def get_hsv_range(self, color) -> dict[str, int]:
+    def get_hsv_range(self, color) -> Dict[str, int]:
         """
         Get HSV range for a specific color.
 
