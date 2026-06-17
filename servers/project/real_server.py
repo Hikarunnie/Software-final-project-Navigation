@@ -379,9 +379,16 @@ def nodes_coords():
 
 @app.route("/set_start", methods=["POST"])
 def set_start():
+    from config.config_provider import config
+
     global current_node, start_direction
     current_node = int(request.json["node"])
     start_direction = request.json.get("direction", "N")
+
+    # Save to config
+    config.set_navigation(start_node=current_node, start_direction=start_direction)
+    config.save()
+
     print(f"[Start] Intersection {current_node} direction={start_direction}")
     return jsonify({"status": "ok", "node": current_node, "direction": start_direction})
 
@@ -402,6 +409,7 @@ def get_hsv():
 
 @app.route("/update_hsv", methods=["POST"])
 def update_hsv():
+    from config.config_provider import config
     from tasks.visual_lane_servoing.packages.visual_servoing_activity import (
         get_hsv_bounds,
         set_hsv_bounds,
@@ -424,14 +432,46 @@ def update_hsv():
         [current["white_lower_h"], current["white_lower_s"], current["white_lower_v"]],
         [current["white_upper_h"], current["white_upper_s"], current["white_upper_v"]],
     )
+
+    # Save to config file
+    config.update_hsv_range(
+        "yellow",
+        {
+            "lower_h": current["yellow_lower_h"],
+            "upper_h": current["yellow_upper_h"],
+            "lower_s": current["yellow_lower_s"],
+            "upper_s": current["yellow_upper_s"],
+            "lower_v": current["yellow_lower_v"],
+            "upper_v": current["yellow_upper_v"],
+        },
+    )
+    config.update_hsv_range(
+        "white",
+        {
+            "lower_h": current["white_lower_h"],
+            "upper_h": current["white_upper_h"],
+            "lower_s": current["white_lower_s"],
+            "upper_s": current["white_upper_s"],
+            "lower_v": current["white_lower_v"],
+            "upper_v": current["white_upper_v"],
+        },
+    )
+    config.save()
+
     return jsonify({"status": "ok", "new_values": get_hsv_bounds()})
 
 
 @app.route("/set_goal", methods=["POST"])
 def set_goal():
+    from config.config_provider import config
+
     global goal_node
     goal_node = int(request.json["node"])
     route = dijkstra(current_node, goal_node, start_direction)
+
+    # Save to config
+    config.set_navigation(goal_node=goal_node)
+    config.save()
 
     print("\n===================")
     print("PATH PLANNER")
@@ -474,53 +514,50 @@ def run_maneuver():
 
 @app.route("/get_lane_config")
 def get_lane_config():
-    import tasks.project.packages.agent as _ag
+    from config.config_provider import config
 
-    lf = _ag.agent.lane_follower
-    return jsonify(
-        {
-            "p_gain": lf.p_gain,
-            "d_gain": lf.d_gain,
-            "base_speed": lf.base_speed,
-        }
-    )
+    return jsonify(config.get_lane_control())
 
 
 @app.route("/set_lane_config", methods=["POST"])
 def set_lane_config():
     import tasks.project.packages.agent as _ag
+    from config.config_provider import config
 
     data = request.json
-    lf = _ag.agent.lane_follower
-    if "p_gain" in data:
-        lf.p_gain = float(data["p_gain"])
-    if "d_gain" in data:
-        lf.d_gain = float(data["d_gain"])
-    if "base_speed" in data:
-        lf.base_speed = float(data["base_speed"])
-    print(f"[LaneConfig] p={lf.p_gain} d={lf.d_gain} speed={lf.base_speed}")
-    return jsonify(
-        {
-            "status": "ok",
-            "p_gain": lf.p_gain,
-            "d_gain": lf.d_gain,
-            "base_speed": lf.base_speed,
-        }
+
+    # Update config
+    config.set_lane_control(
+        p_gain=data.get("p_gain"),
+        d_gain=data.get("d_gain"),
+        base_speed=data.get("base_speed"),
     )
+    config.save()
+
+    # Apply to agent
+    lf = _ag.agent.lane_follower
+    lane_cfg = config.get_lane_control()
+    lf.p_gain = lane_cfg["p_gain"]
+    lf.d_gain = lane_cfg["d_gain"]
+    lf.base_speed = lane_cfg["base_speed"]
+
+    print(f"[LaneConfig] p={lf.p_gain} d={lf.d_gain} speed={lf.base_speed}")
+    return jsonify({"status": "ok", **lane_cfg})
 
 
 @app.route("/get_timing_config")
 def get_timing_config():
-    import tasks.project.packages.agent as _ag
+    from config.config_provider import config
 
+    timing = config.get_timing()
     return jsonify(
         {
-            "forward_clear_time": _ag.FORWARD_CLEAR_TIME,
-            "exit_timeout": _ag.EXIT_TIMEOUT,
-            "turn_time_forward": _ag.TURN_TIME_FORWARD,
-            "turn_time_left": _ag.TURN_TIME_LEFT,
-            "turn_time_right": _ag.TURN_TIME_RIGHT,
-            "turn_time_turnaround": _ag.TURN_TIME_TURNAROUND,
+            "forward_clear_time": timing.get("creep_time", 0.80),
+            "exit_timeout": timing.get("exit_timeout", 4.0),
+            "turn_time_forward": timing.get("forward_through", 1.0),
+            "turn_time_left": timing.get("left_turn", 1.10),
+            "turn_time_right": timing.get("right_turn", 0.80),
+            "turn_time_turnaround": timing.get("turnaround", 3.20),
         }
     )
 
@@ -528,26 +565,44 @@ def get_timing_config():
 @app.route("/set_timing_config", methods=["POST"])
 def set_timing_config():
     import tasks.project.packages.agent as _ag
+    from config.config_provider import config
 
     data = request.json
+
+    # Map UI keys to config keys
+    updates = {}
     if "forward_clear_time" in data:
-        _ag.FORWARD_CLEAR_TIME = float(data["forward_clear_time"])
+        updates["creep_time"] = float(data["forward_clear_time"])
     if "exit_timeout" in data:
-        _ag.EXIT_TIMEOUT = float(data["exit_timeout"])
+        updates["exit_timeout"] = float(data["exit_timeout"])
     if "turn_time_forward" in data:
-        _ag.TURN_TIME_FORWARD = float(data["turn_time_forward"])
-        _ag.TURN_TIMES["forward"] = _ag.TURN_TIME_FORWARD
+        updates["forward_through"] = float(data["turn_time_forward"])
     if "turn_time_left" in data:
-        _ag.TURN_TIME_LEFT = float(data["turn_time_left"])
-        _ag.TURN_TIMES["left"] = _ag.TURN_TIME_LEFT
+        updates["left_turn"] = float(data["turn_time_left"])
     if "turn_time_right" in data:
-        _ag.TURN_TIME_RIGHT = float(data["turn_time_right"])
-        _ag.TURN_TIMES["right"] = _ag.TURN_TIME_RIGHT
+        updates["right_turn"] = float(data["turn_time_right"])
     if "turn_time_turnaround" in data:
-        _ag.TURN_TIME_TURNAROUND = float(data["turn_time_turnaround"])
-        _ag.TURN_TIMES["turnaround"] = _ag.TURN_TIME_TURNAROUND
+        updates["turnaround"] = float(data["turn_time_turnaround"])
+
+    # Update config
+    config.set_timing(**updates)
+    config.save()
+
+    # Apply to agent module
+    timing = config.get_timing()
+    _ag.FORWARD_CLEAR_TIME = timing["creep_time"]
+    _ag.EXIT_TIMEOUT = timing["exit_timeout"]
+    _ag.TURN_TIME_FORWARD = timing["forward_through"]
+    _ag.TURN_TIME_LEFT = timing["left_turn"]
+    _ag.TURN_TIME_RIGHT = timing["right_turn"]
+    _ag.TURN_TIME_TURNAROUND = timing["turnaround"]
+    _ag.TURN_TIMES["forward"] = _ag.TURN_TIME_FORWARD
+    _ag.TURN_TIMES["left"] = _ag.TURN_TIME_LEFT
+    _ag.TURN_TIMES["right"] = _ag.TURN_TIME_RIGHT
+    _ag.TURN_TIMES["turnaround"] = _ag.TURN_TIME_TURNAROUND
+
     print(
-        f"[TimingConfig] fwd_clear={_ag.FORWARD_CLEAR_TIME:.2f} exit={_ag.EXIT_TIMEOUT:.1f} "
+        f"[TimingConfig] creep={_ag.FORWARD_CLEAR_TIME:.2f} exit={_ag.EXIT_TIMEOUT:.1f} "
         f"fwd={_ag.TURN_TIME_FORWARD:.2f} left={_ag.TURN_TIME_LEFT:.2f} right={_ag.TURN_TIME_RIGHT:.2f} "
         f"turnaround={_ag.TURN_TIME_TURNAROUND:.2f}"
     )
