@@ -1,21 +1,20 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "UI-Changeable Bot Configuration",
   "navigation": {
     "start_node": 2,
     "start_direction": "N",
     "goal_node": 3
   },
   "lane_control": {
-    "p_gain": 0.6,
-    "d_gain": 0.8,
-    "base_speed": 0.21
+    "p_gain": 1.25,
+    "d_gain": 0.25,
+    "base_speed": 0.1
   },
   "timing": {
-    "creep_time": 0.8,
-    "exit_timeout": 4.0,
-    "forward_through": 1.0,
-    "left_turn": 1.1,
+    "creep_time": 1.0,
+    "exit_timeout": 6.5,
+    "forward_through": 0.2,
+    "left_turn": 2.15,
     "right_turn": 0.8,
     "turnaround": 3.2
   },
