@@ -498,6 +498,57 @@ def get_goal():
     return jsonify({"node": goal_node})
 
 
+@app.route("/config/bots")
+def get_bot_list():
+    from config.config_provider import config
+
+    return jsonify(
+        {"bots": config.get_bots(), "current": config.get_current_bot_name()}
+    )
+
+
+@app.route("/config/load", methods=["POST"])
+def load_bot_config():
+    from config.config_provider import config
+
+    bot_name = request.json.get("bot_name")
+    if not bot_name:
+        return jsonify({"status": "error", "message": "bot_name required"}), 400
+
+    try:
+        config.load(bot_name)
+        return jsonify(
+            {
+                "status": "ok",
+                "bot_name": bot_name,
+                "message": f"Loaded configuration: {bot_name}",
+            }
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/config/save", methods=["POST"])
+def save_bot_config():
+    from config.config_provider import config
+
+    bot_name = request.json.get("bot_name")
+    if not bot_name:
+        return jsonify({"status": "error", "message": "bot_name required"}), 400
+
+    try:
+        config.save(bot_name)
+        return jsonify(
+            {
+                "status": "ok",
+                "bot_name": bot_name,
+                "message": f"Saved configuration as: {bot_name}",
+            }
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/maneuver", methods=["POST"])
 def run_maneuver():
     data = request.json

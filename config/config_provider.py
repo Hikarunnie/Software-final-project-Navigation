@@ -29,26 +29,53 @@ from typing import Any, Dict, Optional
 class ConfigProvider:
     """Centralized configuration provider with support for nested keys and environment detection."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, bot_name: str = "default"):
         """
         Initialize the configuration provider.
 
         Args:
             config_path: Path to the configuration JSON file. If None, uses default location.
+            bot_name: Name of the bot configuration to load (default: "default")
         """
-        if config_path is None:
-            # Default path relative to this file
-            config_dir = os.path.dirname(os.path.abspath(__file__)) + "/bots"
-            config_path = os.path.join(config_dir, "bot_default.json")
+        self._bot_name = bot_name
+        self.config_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "bots"
+        )
 
-        self._bot_name = "default"
+        if config_path is None:
+            config_path = os.path.join(self.config_dir, f"{bot_name}.json")
+
         self.config_path = config_path
         self._config: Dict[str, Any] = {}
         self._is_real: Optional[bool] = None
         self._load_config()
         self._detect_environment()
 
-    def _load_config(self):
+    def _get_config_path(self, bot_name: str = "default"):
+        config_dir = os.path.dirname(os.path.abspath(__file__)) + "/bots"
+        config_path = os.path.join(config_dir, f"{bot_name}.json")
+        return config_path
+
+    def get_bots(self) -> list[str]:
+        """Return list of available bot configuration names."""
+        try:
+            files = os.listdir(self.config_dir)
+            return sorted(
+                [
+                    f.replace(".json", "")
+                    for f in files
+                    if f.endswith(".json")
+                ]
+            )
+        except Exception as e:
+            print(f"[ConfigProvider] Error listing bots: {e}")
+            return ["default"]
+
+    def get_current_bot_name(self) -> str:
+        """Return the currently loaded bot name."""
+        return self._bot_name
+
+    def _load_config(self, robot_name: Optional[str] = None):
         """Load configuration from JSON file."""
         try:
             with open(self.config_path, "r") as f:
@@ -355,24 +382,43 @@ class ConfigProvider:
         for key, value in updates.items():
             self.set(key, value)
 
-    def save(self, path: Optional[str] = None):
+    def save(self, bot_name: Optional[str] = None):
         """
         Save current configuration to JSON file.
 
         Args:
-            path: Path to save to. If None, uses the original config path.
+            bot_name: Name of bot config to save to. If None, saves to current bot.
         """
-        save_path = path or self.config_path
+        if bot_name is None:
+            save_path = self.config_path
+        else:
+            save_path = os.path.join(self.config_dir, f"{bot_name}.json")
+            self._bot_name = bot_name
+            self.config_path = save_path
 
         try:
             with open(save_path, "w") as f:
                 json.dump(self._config, f, indent=2)
-            print(f"[ConfigProvider] Configuration saved to: {save_path}")
+            print(
+                f"[ConfigProvider] Configuration saved to: {save_path} (bot: {self._bot_name})"
+            )
         except Exception as e:
             print(f"[ConfigProvider] ERROR: Failed to save config: {e}")
 
+    def load(self, bot_name: str):
+        """
+        Load a different bot configuration.
+
+        Args:
+            bot_name: Name of the bot configuration to load
+        """
+        self._bot_name = bot_name
+        self.config_path = os.path.join(self.config_dir, f"{bot_name}.json")
+        self._load_config()
+        print(f"[ConfigProvider] Loaded bot configuration: {bot_name}")
+
     def reload(self):
-        """Reload configuration from file."""
+        """Reload configuration from current file."""
         self._load_config()
         self._detect_environment()
 
@@ -402,7 +448,7 @@ def get_config() -> ConfigProvider:
 
 def reload_config():
     """Reload the global configuration from file."""
-    config.reload()
+    config.load()
 
 
 if __name__ == "__main__":

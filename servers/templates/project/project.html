@@ -157,6 +157,60 @@
     </div>
 
     <div class="card">
+      <div class="card-header">Bot Configuration</div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; gap: 6px; align-items: stretch">
+          <select
+            id="botSelect"
+            style="
+              flex: 1;
+              padding: 8px 10px;
+              background: var(--bg-main);
+              color: var(--text-primary);
+              border: 1px solid var(--border-color);
+              border-radius: 6px;
+              font-size: 13px;
+              cursor: pointer;
+            "
+          >
+            <option value="">Loading...</option>
+          </select>
+          <button
+            class="button"
+            onclick="loadBotConfig()"
+            style="padding: 8px 16px; min-width: 70px; white-space: nowrap"
+          >
+            Load
+          </button>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: stretch">
+          <input
+            type="text"
+            id="botNameInput"
+            placeholder="New bot name"
+            style="
+              flex: 1;
+              padding: 8px 10px;
+              background: var(--bg-main);
+              color: var(--text-primary);
+              border: 1px solid var(--border-color);
+              border-radius: 6px;
+              font-size: 13px;
+            "
+          />
+          <button
+            class="button"
+            onclick="saveBotConfig()"
+            style="padding: 8px 16px; min-width: 70px; white-space: nowrap"
+          >
+            Save
+          </button>
+        </div>
+        <div id="botConfigStatus" class="status"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-header">Dance Maneuver</div>
       <div style="display: flex; flex-direction: column; gap: 8px">
         <button class="button" onclick="sendDance()">Dance</button>

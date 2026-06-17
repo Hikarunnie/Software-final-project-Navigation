@@ -244,6 +244,75 @@ function refreshStatus() {
 refreshStatus();
 setInterval(refreshStatus, 500);
 
+// ── Bot Configuration ────────────────────────────────────────────────────────
+
+function refreshBotList() {
+  fetch("/config/bots")
+    .then((r) => r.json())
+    .then((data) => {
+      const select = document.getElementById("botSelect");
+      select.innerHTML = "";
+      data.bots.forEach((bot) => {
+        const opt = document.createElement("option");
+        opt.value = bot;
+        opt.textContent = bot;
+        if (bot === data.current) {
+          opt.selected = true;
+          opt.textContent = bot + " (current)";
+        }
+        select.appendChild(opt);
+      });
+    })
+    .catch(() => console.error("Failed to load bot list"));
+}
+
+function loadBotConfig() {
+  const botName = document.getElementById("botSelect").value;
+  if (!botName) return;
+
+  postJSON("/config/load", { bot_name: botName })
+    .then((r) => {
+      showStatus(
+        "botConfigStatus",
+        r.message || "Loaded!",
+        r.status === "ok" ? "success" : "error",
+      );
+      if (r.status === "ok") {
+        setTimeout(() => location.reload(), 1000);
+      }
+    })
+    .catch(() => showStatus("botConfigStatus", "Load failed", "error"));
+}
+
+function saveBotConfig() {
+  const botName = document.getElementById("botNameInput").value.trim();
+  if (!botName) {
+    showStatus("botConfigStatus", "Enter bot name", "error");
+    return;
+  }
+
+  postJSON("/config/save", { bot_name: botName })
+    .then((r) => {
+      showStatus(
+        "botConfigStatus",
+        r.message || "Saved!",
+        r.status === "ok" ? "success" : "error",
+      );
+      if (r.status === "ok") {
+        document.getElementById("botNameInput").value = "";
+        refreshBotList();
+      }
+    })
+    .catch(() => showStatus("botConfigStatus", "Save failed", "error"));
+}
+
+// Initialize bot list on load
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", refreshBotList);
+} else {
+  refreshBotList();
+}
+
 // ── Dance ─────────────────────────────────────────────────────────────────────
 
 function sendDance() {
