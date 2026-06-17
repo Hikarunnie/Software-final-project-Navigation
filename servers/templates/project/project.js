@@ -306,6 +306,10 @@ function saveBotConfig() {
     .catch(() => showStatus("botConfigStatus", "Save failed", "error"));
 }
 
+function downloadBotConfig() {
+  window.location.href = "/config/download";
+}
+
 // Initialize bot list on load
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", refreshBotList);

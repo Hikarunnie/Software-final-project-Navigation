@@ -400,11 +400,29 @@ def get_start():
 
 @app.route("/get_hsv")
 def get_hsv():
-    from tasks.visual_lane_servoing.packages.visual_servoing_activity import (
-        get_hsv_bounds,
-    )
+    from config.config_provider import config
 
-    return jsonify(get_hsv_bounds())
+    # Get HSV from config instead of student module
+    yellow = config.get_hsv_range("yellow")
+    white = config.get_hsv_range("white")
+
+    # Return in the format the UI expects
+    return jsonify(
+        {
+            "yellow_lower_h": yellow["lower_h"],
+            "yellow_upper_h": yellow["upper_h"],
+            "yellow_lower_s": yellow["lower_s"],
+            "yellow_upper_s": yellow["upper_s"],
+            "yellow_lower_v": yellow["lower_v"],
+            "yellow_upper_v": yellow["upper_v"],
+            "white_lower_h": white["lower_h"],
+            "white_upper_h": white["upper_h"],
+            "white_lower_s": white["lower_s"],
+            "white_upper_s": white["upper_s"],
+            "white_lower_v": white["lower_v"],
+            "white_upper_v": white["upper_v"],
+        }
+    )
 
 
 @app.route("/update_hsv", methods=["POST"])
@@ -544,6 +562,28 @@ def save_bot_config():
                 "bot_name": bot_name,
                 "message": f"Saved configuration as: {bot_name}",
             }
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/config/download")
+def download_bot_config():
+    import json
+    import os
+
+    from config.config_provider import config
+
+    try:
+        config_data = config.get_all()
+        config_json = json.dumps(config_data, indent=2)
+        config_path = config.config_path
+        filename = os.path.basename(config_path)
+
+        return Response(
+            config_json,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
