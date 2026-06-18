@@ -700,6 +700,34 @@ def set_timing_config():
     return jsonify({"status": "ok"})
 
 
+@app.route("/get_turn_bias")
+def get_turn_bias():
+    import tasks.project.packages.agent as _ag
+
+    return jsonify(
+        {
+            "turn_bias_low": _ag.TURN_BIAS_LOW,
+            "turn_bias_high": _ag.TURN_BIAS_HIGH,
+        }
+    )
+
+
+@app.route("/set_turn_bias", methods=["POST"])
+def set_turn_bias():
+    import tasks.project.packages.agent as _ag
+
+    data = request.json
+    if "turn_bias_low" in data:
+        _ag.TURN_BIAS_LOW = float(data["turn_bias_low"])
+    if "turn_bias_high" in data:
+        _ag.TURN_BIAS_HIGH = float(data["turn_bias_high"])
+    print(
+        f"[TurnBias] low={_ag.TURN_BIAS_LOW:.2f} high={_ag.TURN_BIAS_HIGH:.2f}",
+        flush=True,
+    )
+    return jsonify({"status": "ok"})
+
+
 @app.route("/speeds")
 def get_speeds():
     return jsonify(current_speeds)
