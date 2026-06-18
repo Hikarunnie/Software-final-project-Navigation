@@ -279,6 +279,9 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',inj
 function injectTimingCard(){const e=[...document.querySelectorAll('.card')].find(c=>c.querySelector('.card-header')?.textContent?.includes('Dance'));if(!e)return;const d=document.createElement('div');d.className='card';d.innerHTML=`<div class="card-header">Intersection Timing</div><div class="lane-slider-group"><div class="lane-slider-row"><label>Creep Time</label><input type="range" id="tc-fct" min="0.1" max="3" step="0.05" value="0.8" oninput="document.getElementById('tc-fct-v').textContent=parseFloat(this.value).toFixed(2);applyTimingConfig()"><span id="tc-fct-v">0.80</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Exit Timeout</label><input type="range" id="tc-ext" min="0.5" max="8" step="0.5" value="4" oninput="document.getElementById('tc-ext-v').textContent=parseFloat(this.value).toFixed(1);applyTimingConfig()"><span id="tc-ext-v">4.0</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Fwd Through</label><input type="range" id="tc-tfwd" min="0.1" max="5" step="0.1" value="1" oninput="document.getElementById('tc-tfwd-v').textContent=parseFloat(this.value).toFixed(1);applyTimingConfig()"><span id="tc-tfwd-v">1.0</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Left Turn</label><input type="range" id="tc-tl" min="0.1" max="3" step="0.05" value="1.1" oninput="document.getElementById('tc-tl-v').textContent=parseFloat(this.value).toFixed(2);applyTimingConfig()"><span id="tc-tl-v">1.10</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Right Turn</label><input type="range" id="tc-tr" min="0.1" max="3" step="0.05" value="0.8" oninput="document.getElementById('tc-tr-v').textContent=parseFloat(this.value).toFixed(2);applyTimingConfig()"><span id="tc-tr-v">0.80</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Turnaround</label><input type="range" id="tc-tta" min="0.1" max="6" step="0.05" value="3.2" oninput="document.getElementById('tc-tta-v').textContent=parseFloat(this.value).toFixed(2);applyTimingConfig()"><span id="tc-tta-v">3.20</span></div></div><div id="tc-status" class="status"></div>`;e.parentNode.insertBefore(d,e);fetch('/get_timing_config').then(r=>r.json()).then(cfg=>{document.getElementById('tc-fct').value=cfg.forward_clear_time;document.getElementById('tc-fct-v').textContent=cfg.forward_clear_time.toFixed(2);document.getElementById('tc-ext').value=cfg.exit_timeout;document.getElementById('tc-ext-v').textContent=cfg.exit_timeout.toFixed(1);document.getElementById('tc-tfwd').value=cfg.turn_time_forward;document.getElementById('tc-tfwd-v').textContent=cfg.turn_time_forward.toFixed(1);document.getElementById('tc-tl').value=cfg.turn_time_left;document.getElementById('tc-tl-v').textContent=cfg.turn_time_left.toFixed(2);document.getElementById('tc-tr').value=cfg.turn_time_right;document.getElementById('tc-tr-v').textContent=cfg.turn_time_right.toFixed(2);document.getElementById('tc-tta').value=cfg.turn_time_turnaround;document.getElementById('tc-tta-v').textContent=cfg.turn_time_turnaround.toFixed(2)}).catch(()=>{})}
 function applyTimingConfig(){postJSON('/set_timing_config',{forward_clear_time:parseFloat(document.getElementById('tc-fct').value),exit_timeout:parseFloat(document.getElementById('tc-ext').value),turn_time_forward:parseFloat(document.getElementById('tc-tfwd').value),turn_time_left:parseFloat(document.getElementById('tc-tl').value),turn_time_right:parseFloat(document.getElementById('tc-tr').value),turn_time_turnaround:parseFloat(document.getElementById('tc-tta').value)}).then(()=>showStatus('tc-status','Applied!','success')).catch(()=>showStatus('tc-status','Error','error'))}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',injectTimingCard):injectTimingCard();
+function injectBiasCard(){const e=[...document.querySelectorAll('.card')].find(c=>c.querySelector('.card-header')?.textContent?.includes('Dance'));if(!e)return;const d=document.createElement('div');d.className='card';d.innerHTML=`<div class="card-header">Turn Bias</div><div class="lane-slider-group"><div class="lane-slider-row"><label>Inner (low)</label><input type="range" id="bc-low" min="-1" max="1" step="0.05" value="0.1" oninput="document.getElementById('bc-low-v').textContent=parseFloat(this.value).toFixed(2);applyBiasConfig()"><span id="bc-low-v">0.10</span></div></div><div class="lane-slider-group"><div class="lane-slider-row"><label>Outer (high)</label><input type="range" id="bc-high" min="0" max="2" step="0.05" value="1.8" oninput="document.getElementById('bc-high-v').textContent=parseFloat(this.value).toFixed(2);applyBiasConfig()"><span id="bc-high-v">1.80</span></div></div><div id="bc-status" class="status"></div>`;e.parentNode.insertBefore(d,e);fetch('/get_turn_bias').then(r=>r.json()).then(cfg=>{document.getElementById('bc-low').value=cfg.turn_bias_low;document.getElementById('bc-low-v').textContent=cfg.turn_bias_low.toFixed(2);document.getElementById('bc-high').value=cfg.turn_bias_high;document.getElementById('bc-high-v').textContent=cfg.turn_bias_high.toFixed(2)}).catch(()=>{})}
+function applyBiasConfig(){postJSON('/set_turn_bias',{turn_bias_low:parseFloat(document.getElementById('bc-low').value),turn_bias_high:parseFloat(document.getElementById('bc-high').value)}).then(()=>showStatus('bc-status','Applied!','success')).catch(()=>showStatus('bc-status','Error','error'))}
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',injectBiasCard):injectBiasCard();
 </script>"""
     return base.replace("</body>", extra + "</body>")
 
@@ -567,6 +570,34 @@ def set_timing_config():
         f"[TimingConfig] fwd_clear={_ag.FORWARD_CLEAR_TIME:.2f} exit={_ag.EXIT_TIMEOUT:.1f} "
         f"fwd={_ag.TURN_TIME_FORWARD:.2f} left={_ag.TURN_TIME_LEFT:.2f} right={_ag.TURN_TIME_RIGHT:.2f} "
         f"turnaround={_ag.TURN_TIME_TURNAROUND:.2f}"
+    )
+    return jsonify({"status": "ok"})
+
+
+@app.route("/get_turn_bias")
+def get_turn_bias():
+    import tasks.project.packages.agent as _ag
+
+    return jsonify(
+        {
+            "turn_bias_low": _ag.TURN_BIAS_LOW,
+            "turn_bias_high": _ag.TURN_BIAS_HIGH,
+        }
+    )
+
+
+@app.route("/set_turn_bias", methods=["POST"])
+def set_turn_bias():
+    import tasks.project.packages.agent as _ag
+
+    data = request.json
+    if "turn_bias_low" in data:
+        _ag.TURN_BIAS_LOW = float(data["turn_bias_low"])
+    if "turn_bias_high" in data:
+        _ag.TURN_BIAS_HIGH = float(data["turn_bias_high"])
+    print(
+        f"[TurnBias] low={_ag.TURN_BIAS_LOW:.2f} high={_ag.TURN_BIAS_HIGH:.2f}",
+        flush=True,
     )
     return jsonify({"status": "ok"})
 

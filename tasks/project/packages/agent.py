@@ -49,8 +49,13 @@ print(f"[Agent] Running on: {'REAL ROBOT' if _IS_REAL else 'SIMULATION'}", flush
 
 # ── Speeds ────────────────────────────────────────────────────────────────────
 MOTOR_BIAS = 0 if _IS_REAL else 0.0
-TURN_BIAS_LOW = 0 if _IS_REAL else 0.1
-TURN_BIAS_HIGH = 0 if _IS_REAL else 1.8
+# Per-wheel multipliers applied to TURN_SPEED during an intersection turn.
+# Real robot pivots in place: inner wheel reverses (-1), outer drives forward (+1),
+# reproducing the known-good (-TURN_SPEED, +TURN_SPEED) pivot turn. (Both were 0,
+# which made every turn 0 speed — the robot stopped instead of turning.)
+# Sim uses a forward arc (both wheels forward, different speeds).
+TURN_BIAS_LOW = 0.1 if _IS_REAL else 0.1
+TURN_BIAS_HIGH = 1.8 if _IS_REAL else 1.8
 # Speed while slowly driving over the red stop line before turning
 CREEP_SPEED = 0.06 if not _IS_REAL else 0.3
 
