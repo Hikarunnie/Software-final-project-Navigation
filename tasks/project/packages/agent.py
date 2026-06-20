@@ -55,7 +55,7 @@ MOTOR_BIAS = 0 if _IS_REAL else 0.0
 # which made every turn 0 speed — the robot stopped instead of turning.)
 # Sim uses a forward arc (both wheels forward, different speeds).
 TURN_BIAS_LOW = 0.1 if _IS_REAL else 0.1
-TURN_BIAS_HIGH = 1.8 if _IS_REAL else 1.8
+TURN_BIAS_HIGH = 1.8 if _IS_REAL else 2
 # Speed while slowly driving over the red stop line before turning
 CREEP_SPEED = 0.06 if not _IS_REAL else 0.3
 
@@ -72,13 +72,13 @@ FORWARD_CLEAR_TIME = 0.55 if not _IS_REAL else 1.15
 
 # Maximum seconds to drive forward after a turn while searching for lane lines.
 # If lane is found earlier (300px detected), exits immediately.
-EXIT_TIMEOUT = 4.0 if not _IS_REAL else 4.0
+EXIT_TIMEOUT = 4.0 if not _IS_REAL else 3.0
 
 # Seconds to drive straight forward through a forward intersection (no turn)
-TURN_TIME_FORWARD = 2 if not _IS_REAL else 1.4
+TURN_TIME_FORWARD = 10 if not _IS_REAL else 1.4
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT = 0.04 if not _IS_REAL else 0.7
+TURN_TIME_LEFT = 0.2 if not _IS_REAL else 0.7
 
 # Seconds to rotate right at an intersection
 TURN_TIME_RIGHT = 0.15 if not _IS_REAL else 0.55
