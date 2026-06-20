@@ -274,16 +274,18 @@ class LaneServoingAgent:
         if yellow_slice_count > 0:
             self._yellow_visible_frames = min(self._yellow_visible_frames + 1, 999)
         else:
-            if (self._yellow_visible_frames >= _YELLOW_MIN_FRAMES
-                    and self._left_turn_state == 'none'
-                    and now >= self._left_turn_cooldown_end):
-                self._left_turn_state = 'straight'
+            if (
+                self._yellow_visible_frames >= _YELLOW_MIN_FRAMES
+                and self._left_turn_state == "none"
+                and now >= self._left_turn_cooldown_end
+            ):
+                self._left_turn_state = "straight"
                 self._left_turn_start = now
                 print("[Agent] Yellow gone — left turn: driving straight")
             self._yellow_visible_frames = 0
 
         # ── Left-turn state machine ───────────────────────────────────────────
-        if self._left_turn_state == 'straight':
+        if self._left_turn_state == "straight":
             elapsed = now - self._left_turn_start
             if elapsed < self._left_straight_duration:
                 s = self._left_straight_speed
@@ -292,7 +294,7 @@ class LaneServoingAgent:
             self._left_turn_start = now
             print("[Agent] Left turn: now turning")
 
-        if self._left_turn_state == 'turning':
+        if self._left_turn_state == "turning":
             elapsed = now - self._left_turn_start
             # Exit: white line reappears OR hard timeout
             white_reappeared = white_slice_count >= 2

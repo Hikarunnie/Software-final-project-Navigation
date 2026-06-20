@@ -8,7 +8,86 @@ _CONTENT = '''
 
         <div class="controls-section">
 
-            <!-- HSV Calibration card -->
+            <div class="card">
+                <div class="card-header">Track Map Router</div>
+                <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+                    1st click: start point + direction. 2nd click: end point. 3rd click: reset.
+                </p>
+                <div class="standalone-map-container">
+                    <img src="/config/kiu_map.png" alt="Track Map Grid" class="map-grid-underlay">
+                    <div id="standaloneGridOverlay"></div>
+                </div>
+                <div id="grid-click-status" class="status" style="margin-top: 8px; font-size: 12px;"></div>
+                <div id="direction-picker" style="display:none; margin-top: 8px; text-align:center;">
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Choose bot direction:</div>
+                    <div style="display:flex;gap:6px;justify-content:center;">
+                        <button class="button" style="flex:1" onclick="setDirection('N')">N</button>
+                        <button class="button" style="flex:1" onclick="setDirection('E')">E</button>
+                        <button class="button" style="flex:1" onclick="setDirection('S')">S</button>
+                        <button class="button" style="flex:1" onclick="setDirection('W')">W</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    Status
+                    <span id="statusDot" style="width:8px;height:8px;border-radius:50%;
+                        background:var(--accent-green);display:inline-block;"></span>
+                </div>
+                <div id="statusTable" style="font-size:12px;">
+                    <div style="color:var(--text-muted);text-align:center;padding:12px 0;">
+                        Waiting for data...
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Object Detection</div>
+                <div id="model-status" class="model-status building">Loading&hellip;</div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Mode</div>
+                <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
+                    <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
+                    <label style="position:relative;display:inline-block;width:48px;height:26px;">
+                        <input type="checkbox" id="driveToggle" onchange="toggleMode(this.checked)"
+                            style="opacity:0;width:0;height:0;">
+                        <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+                            background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
+                            transition:.3s;">
+                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
+                                background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
+                                id="toggleKnob"></span>
+                        </span>
+                    </label>
+                    <span style="font-size:13px;color:var(--text-secondary);">Manual Drive</span>
+                </div>
+                <div id="modeStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mode: Navigation</div>
+            </div>
+
+            <div class="card" id="driveCard" style="display:none;">
+                <div class="card-header">Drive</div>
+                <div class="key-display">
+                    <div class="key-box key-up"    id="key-up">&#9650;</div>
+                    <div class="key-box key-left"  id="key-left">&#9664;</div>
+                    <div class="key-box key-down"  id="key-down">&#9660;</div>
+                    <div class="key-box key-right" id="key-right">&#9654;</div>
+                </div>
+                <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
+            </div>
+
+
+
+            <div class="card">
+                <div class="card-header">Dance Maneuver</div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    <button class="button" onclick="sendDance()">Dance</button>
+                    <div id="danceStatus" class="status"></div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">HSV Color Calibration</div>
 
@@ -105,91 +184,6 @@ _CONTENT = '''
                 <div id="hsv-status" class="status"></div>
             </div>
 
-            <div class="card">
-                <div class="card-header">
-                    Status
-                    <span id="statusDot" style="width:8px;height:8px;border-radius:50%;
-                        background:var(--accent-green);display:inline-block;"></span>
-                </div>
-                <div id="statusTable" style="font-size:12px;">
-                    <div style="color:var(--text-muted);text-align:center;padding:12px 0;">
-                        Waiting for data...
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Object Detection</div>
-                <div id="model-status" class="model-status building">Loading&hellip;</div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Mode</div>
-                <div style="display:flex;align-items:center;gap:12px;padding:4px 0;">
-                    <span style="font-size:13px;color:var(--text-secondary);">Navigation</span>
-                    <label style="position:relative;display:inline-block;width:48px;height:26px;">
-                        <input type="checkbox" id="driveToggle" onchange="toggleMode(this.checked)"
-                            style="opacity:0;width:0;height:0;">
-                        <span id="toggleSlider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
-                            background:var(--bg-sidebar);border:2px solid var(--border-color);border-radius:26px;
-                            transition:.3s;">
-                            <span style="position:absolute;content:\'\';height:18px;width:18px;left:2px;bottom:2px;
-                                background:var(--text-muted);border-radius:50%;transition:.3s;display:block;"
-                                id="toggleKnob"></span>
-                        </span>
-                    </label>
-                    <span style="font-size:13px;color:var(--text-secondary);">Manual Drive</span>
-                </div>
-                <div id="modeStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;">Mode: Navigation</div>
-            </div>
-
-            <div class="card" id="driveCard" style="display:none;">
-                <div class="card-header">Drive</div>
-                <div class="key-display">
-                    <div class="key-box key-up"    id="key-up">&#9650;</div>
-                    <div class="key-box key-left"  id="key-left">&#9664;</div>
-                    <div class="key-box key-down"  id="key-down">&#9660;</div>
-                    <div class="key-box key-right" id="key-right">&#9654;</div>
-                </div>
-                <p style="text-align:center;font-size:11px;color:var(--text-muted)">Arrow keys or WASD</p>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Start Node</div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="startNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
-                           border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Node 1</option>
-                        <option value="2">Node 2</option>
-                        <option value="3">Node 3</option>
-                    </select>
-                    <button class="button" onclick="setStartNode()">Set</button>
-                </div>
-                <div id="startStatus" class="status"></div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">End Node</div>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="goalNode" style="flex:1;padding:6px 8px;background:var(--bg-sidebar);
-                           border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
-                        <option value="1">Node 1</option>
-                        <option value="2">Node 2</option>
-                        <option value="3">Node 3</option>
-                    </select>
-                    <button class="button" onclick="setGoalNode()">Set</button>
-                </div>
-                <div id="goalStatus" class="status"></div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">Dance Maneuver</div>
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                    <button class="button" onclick="sendDance()">Dance</button>
-                    <div id="danceStatus" class="status"></div>
-                </div>
-            </div>
-
         </div>
     </div>
 '''
@@ -241,6 +235,64 @@ _EXTRA_CSS = '''
 .model-status.ok      { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.3);  color: var(--accent-green); }
 .model-status.err     { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--accent-red); }
 .model-status.building{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
+
+/* Styles for Standalone Track Grid Panels */
+.standalone-map-container {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+    background: #0f141c;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+.map-grid-underlay {
+    display: block;
+    width: 100%;
+    height: auto;
+    opacity: 0.85;
+}
+#standaloneGridOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+}
+.standalone-tile {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    transition: background 0.1s ease;
+}
+.standalone-tile:hover {
+    background: rgba(255, 159, 67, 0.25);
+    outline: 1px solid #ff9f43;
+    z-index: 5;
+}
+.standalone-tile.start-selected {
+    background: rgba(63, 185, 80, 0.2);
+    outline: 2px solid var(--accent-green);
+    z-index: 10;
+}
+.standalone-tile.goal-selected {
+    background: rgba(248, 81, 73, 0.2);
+    outline: 2px solid var(--accent-red);
+    z-index: 10;
+}
+.standalone-tile.valid-tile {
+    background: rgba(31, 111, 235, 0.08);
+    border-color: rgba(31, 111, 235, 0.25);
+}
+.standalone-tile.valid-tile:hover {
+    background: rgba(31, 111, 235, 0.2);
+    outline: 1px solid var(--accent-blue);
+}
 '''
 
 _EXTRA_JS = '''
@@ -437,35 +489,6 @@ function refreshStatus() {
 refreshStatus();
 setInterval(refreshStatus, 500);
 
-// ── Node controls ─────────────────────────────────────────────────────────────
-
-function setStartNode() {
-    const node = parseInt(document.getElementById('startNode').value);
-    postJSON('/set_start', {node})
-        .then(r => showStatus('startStatus', 'Start set to ' + r.node, 'success'))
-        .catch(() => showStatus('startStatus', 'Error', 'error'));
-}
-
-function setGoalNode() {
-    const node = parseInt(document.getElementById('goalNode').value);
-    postJSON('/set_goal', {node})
-        .then(r => {
-            let msg = 'Goal set to ' + r.node;
-            if (r.path) msg += '  Path: ' + r.path.join(' → ');
-            showStatus('goalStatus', msg, 'success');
-        })
-        .catch(() => showStatus('goalStatus', 'Error', 'error'));
-}
-
-// Pre-fill selects from server
-fetch('/get_start').then(r => r.json()).then(d => {
-    document.getElementById('startNode').value = d.node;
-}).catch(() => {});
-
-fetch('/get_goal').then(r => r.json()).then(d => {
-    document.getElementById('goalNode').value = d.node;
-}).catch(() => {});
-
 // ── Dance ─────────────────────────────────────────────────────────────────────
 
 function sendDance() {
@@ -473,16 +496,120 @@ function sendDance() {
         .then(r => showStatus('danceStatus', r.status === 'ok' ? 'Dance started!' : (r.message || 'Error'), r.status === 'ok' ? 'success' : 'error'))
         .catch(() => showStatus('danceStatus', 'Error', 'error'));
 }
+
+// ── Grid click state machine ─────────────────────────────────────────────────
+const GS_IDLE = 0, GS_DIR = 1, GS_GOAL = 2, GS_DONE = 3;
+let gridState = GS_IDLE;
+let pendingIntersection = null;
+let gridStartTile = null;
+let gridGoalTile = null;
+
+function showPicker(id, show) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? 'block' : 'none';
+}
+
+function resetGridSelection() {
+    pendingIntersection = null;
+    gridState = GS_IDLE;
+    showPicker('direction-picker', false);
+    if (gridStartTile) gridStartTile.classList.remove('start-selected');
+    if (gridGoalTile) gridGoalTile.classList.remove('goal-selected');
+    gridStartTile = null;
+    gridGoalTile = null;
+}
+
+function setDirection(dir) {
+    showPicker('direction-picker', false);
+    const id = pendingIntersection;
+    postJSON('/set_start', { node: id, direction: dir })
+        .then(r => showStatus('grid-click-status',
+            'Start: intersection ' + id + ' ' + dir, 'success'))
+        .catch(() => showStatus('grid-click-status', 'Server error', 'error'));
+    gridState = GS_GOAL;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const totalCols = 7;
+    const totalRows = 9;
+
+    // Mapping from grid tile (c=horizontal, r=vertical) to intersection ID
+    const TILE_INTERSECTION_MAP = {
+        '1,5': 2,
+        '3,5': 3,
+        '4,1': 1,
+    };
+
+    const gridOverlay = document.getElementById('standaloneGridOverlay');
+    if (!gridOverlay) return;
+
+    for (let r = 1; r <= totalRows; r++) {
+        for (let c = 1; c <= totalCols; c++) {
+            const tile = document.createElement('button');
+            tile.className = 'standalone-tile';
+            tile._c = c; tile._r = r;
+
+            const key = c + ',' + r;
+            if (TILE_INTERSECTION_MAP[key] != null) {
+                tile.classList.add('valid-tile');
+                tile.setAttribute('title', 'Intersection ' + TILE_INTERSECTION_MAP[key]);
+            }
+
+            tile.addEventListener('click', () => {
+                const intersectionId = TILE_INTERSECTION_MAP[key];
+                if (intersectionId == null) {
+                    showStatus('grid-click-status',
+                        'No intersection at this tile', 'error');
+                    return;
+                }
+
+                if (gridState === GS_IDLE || gridState === GS_DONE) {
+                    resetGridSelection();
+                    gridStartTile = tile;
+                    tile.classList.add('start-selected');
+                    pendingIntersection = intersectionId;
+                    gridState = GS_DIR;
+                    showPicker('direction-picker', true);
+                    showStatus('grid-click-status',
+                        'Start: intersection ' + intersectionId + ' — choose direction', 'success');
+                } else if (gridState === GS_DIR) {
+                    if (gridStartTile) gridStartTile.classList.remove('start-selected');
+                    gridStartTile = tile;
+                    tile.classList.add('start-selected');
+                    pendingIntersection = intersectionId;
+                    showStatus('grid-click-status',
+                        'Start: intersection ' + intersectionId + ' — choose direction', 'success');
+                } else if (gridState === GS_GOAL) {
+                    if (tile === gridStartTile) return;
+                    if (gridGoalTile) gridGoalTile.classList.remove('goal-selected');
+                    gridGoalTile = tile;
+                    tile.classList.add('goal-selected');
+                    postJSON('/set_goal', { node: intersectionId })
+                        .then(r => {
+                            let msg = 'Goal: intersection ' + intersectionId;
+                            if (r.path) msg += '  Path: ' + r.path.join(' \u2192 ');
+                            showStatus('grid-click-status', msg, 'success');
+                        })
+                        .catch(() => showStatus('grid-click-status', 'Server error', 'error'));
+                    gridState = GS_DONE;
+                }
+            });
+
+            gridOverlay.appendChild(tile);
+        }
+    }
+});
 '''
 
 
 def get_template(title='Project', subtitle='Real Duckiebot'):
-    return render_template(
-        title=title,
-        subtitle=subtitle,
-        content_html=_CONTENT,
-        extra_css=_EXTRA_CSS,
-        extra_js=_EXTRA_JS,
-    )
+  return render_template(
+      title=title,
+      subtitle=subtitle,
+      content_html=_CONTENT,
+      extra_css=_EXTRA_CSS,
+      extra_js=_EXTRA_JS,
+  )
+
 
 PROJECT_TEMPLATE = get_template()

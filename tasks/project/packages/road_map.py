@@ -1,5 +1,6 @@
 try:
     import godot.utils.map
+
     _GODOT_AVAILABLE = True
 except ImportError:
     _GODOT_AVAILABLE = False
@@ -14,30 +15,74 @@ class RoadMap:
     """
 
     def __init__(self, scene_name="test1_actual_map_kiu"):
+        # Try loading from scene file first (works in sim and on real robot if .tscn exists)
         if _GODOT_AVAILABLE:
             try:
                 self.nodes, self.edges = godot.utils.map.get_nodes_and_edges(scene_name)
-                print(f"[RoadMap] Loaded from scene: {scene_name} ({len(self.nodes)} nodes, {len(self.edges)} edges)")
+                if not self.nodes or not self.edges:
+                    raise ValueError("Scene load returned empty nodes/edges")
+                print(
+                    f"[RoadMap] Loaded from scene: {scene_name}; \n nodes: {self.nodes}; \n edges: {self.edges}"
+                )
+                return
             except Exception as e:
-                print(f"[RoadMap] Scene load failed: {e}, using fallback")
-                self._load_hardcoded()
+                print(
+                    f"[RoadMap] Scene load failed: {e}, falling back to hardcoded map"
+                )
         else:
-            print("[RoadMap] Godot not available, using hardcoded map")
-            self._load_hardcoded()
+            print("[RoadMap] godot.utils.map not available, using hardcoded map")
+
+        # Fallback: hardcoded map for real robot
+        self._load_hardcoded()
 
     def _load_hardcoded(self):
+        """Hardcoded map matching the physical real robot track."""
         self.nodes = {
             1: {"id": 1, "x": 2.7, "y": 2.1},
             2: {"id": 2, "x": 0.9, "y": 4.5},
             3: {"id": 3, "x": 2.1, "y": 4.5},
         }
         self.edges = {
-            "1-3-a": {"from": 1, "to": 3, "length": 13, "direction": "left", "reverse_direction": "right"},
-            "1-2-a": {"from": 1, "to": 2, "length": 7, "direction": "forward", "reverse_direction": "right"},
-            "1-3-b": {"from": 1, "to": 3, "length": 5, "direction": "left", "reverse_direction": "right"},
-            "2-3-a": {"from": 2, "to": 3, "length": 2, "direction": "forward", "reverse_direction": "forward"},
-            "2-3-b": {"from": 2, "to": 3, "length": 10, "direction": "forward", "reverse_direction": "forward"},
+            "1-3-a": {
+                "from": 1,
+                "to": 3,
+                "length": 13,
+                "direction1": "E",
+                "direction2": "E",
+            },
+            "1-2-a": {
+                "from": 1,
+                "to": 2,
+                "length": 7,
+                "direction1": "W",
+                "direction2": "N",
+            },
+            "1-3-b": {
+                "from": 1,
+                "to": 3,
+                "length": 5,
+                "direction1": "S",
+                "direction2": "N",
+            },
+            "2-3-a": {
+                "from": 2,
+                "to": 3,
+                "length": 2,
+                "direction1": "E",
+                "direction2": "W",
+            },
+            "2-3-b": {
+                "from": 2,
+                "to": 3,
+                "length": 10,
+                "direction1": "S",
+                "direction2": "S",
+            },
         }
+        print(
+            f"[RoadMap] Hardcoded map loaded ({len(self.nodes)} nodes, {len(self.edges)} edges)"
+        )
+
     def neighbors(self, node_id):
         """Return all roads reachable from node_id as (neighbor_id, length, edge_id) tuples."""
         result = []
@@ -57,14 +102,17 @@ class RoadMap:
         for neighbor, length, edge_id in self.neighbors(node_id):
             if neighbor not in seen or length < seen[neighbor][0]:
                 seen[neighbor] = (length, edge_id)
-        return [(neighbor, length, edge_id) for neighbor, (length, edge_id) in seen.items()]
+        return [
+            (neighbor, length, edge_id) for neighbor, (length, edge_id) in seen.items()
+        ]
 
     def edges_between(self, node_a, node_b):
         """Return all edges between node_a and node_b, sorted by length ascending."""
         result = []
         for edge_id, edge in self.edges.items():
-            if (edge["from"] == node_a and edge["to"] == node_b) or \
-               (edge["from"] == node_b and edge["to"] == node_a):
+            if (edge["from"] == node_a and edge["to"] == node_b) or (
+                edge["from"] == node_b and edge["to"] == node_a
+            ):
                 result.append((edge_id, edge["length"]))
         return sorted(result, key=lambda x: x[1])
 
