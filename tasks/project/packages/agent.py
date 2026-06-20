@@ -55,7 +55,7 @@ MOTOR_BIAS = 0 if _IS_REAL else 0.0
 # which made every turn 0 speed — the robot stopped instead of turning.)
 # Sim uses a forward arc (both wheels forward, different speeds).
 TURN_BIAS_LOW = 0.1 if _IS_REAL else 0.1
-TURN_BIAS_HIGH = 1.8 if _IS_REAL else 1.8
+TURN_BIAS_HIGH = 1.8 if _IS_REAL else 2
 # Speed while slowly driving over the red stop line before turning
 CREEP_SPEED = 0.06 if not _IS_REAL else 0.3
 
@@ -72,13 +72,13 @@ FORWARD_CLEAR_TIME = 0.55 if not _IS_REAL else 1.15
 
 # Maximum seconds to drive forward after a turn while searching for lane lines.
 # If lane is found earlier (300px detected), exits immediately.
-EXIT_TIMEOUT = 4.0 if not _IS_REAL else 4.0
+EXIT_TIMEOUT = 4.0 if not _IS_REAL else 3.0
 
 # Seconds to drive straight forward through a forward intersection (no turn)
-TURN_TIME_FORWARD = 2 if not _IS_REAL else 1.4
+TURN_TIME_FORWARD = 10 if not _IS_REAL else 1.4
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT = 0.04 if not _IS_REAL else 0.7
+TURN_TIME_LEFT = 0.2 if not _IS_REAL else 0.7
 
 # Seconds to rotate right at an intersection
 TURN_TIME_RIGHT = 0.15 if not _IS_REAL else 0.55
@@ -286,11 +286,13 @@ class IntersectionFSM:
         self._phase = "done"
         self._direction = "forward"
         self._phase_end = 0.0
+        self._last_tick = None
 
     def reset(self):
         self._phase = "done"
         self._direction = "forward"
         self._phase_end = 0.0
+        self._last_tick = None
 
     @property
     def running(self):
@@ -298,6 +300,7 @@ class IntersectionFSM:
 
     def start(self, direction):
         self._direction = direction
+        self._last_tick = None
         self._enter_phase("clear")
         print(f"[Intersection] Starting — direction='{direction}'", flush=True)
 
@@ -316,10 +319,18 @@ class IntersectionFSM:
         elif phase == "done":
             self._phase_end = 0.0
 
-    def update(self, wheels, frame_bgr=None):
+    def update(self, wheels, frame_bgr=None, paused=False):
         if self._phase == "done":
             return False
         now = time.time()
+        # Freeze the phase clock while paused for an obstacle so the maneuver
+        # resumes where it left off instead of timing out during the wait.
+        dt = (now - self._last_tick) if self._last_tick is not None else 0.0
+        self._last_tick = now
+        if paused:
+            self._phase_end += dt
+            wheels.set_wheels_speed(0.0, 0.0)
+            return True
         finished = now >= self._phase_end
 
         if self._phase == "clear":
@@ -549,16 +560,33 @@ class NavigationAgent:
         if self.state == "crossing":
             fsm_phase = self.intersection_fsm._phase
             fsm_dir = self.intersection_fsm._direction
-            if fsm_phase == "turn":
-                if fsm_dir in ("left", "turnaround"):
-                    self._apply_leds(leds, "turn_left")
-                elif fsm_dir == "right":
-                    self._apply_leds(leds, "turn_right")
+
+            # Watch for obstacles during the crossing too: if a duckie/robot is
+            # ahead, pause the maneuver (its phase clock freezes) and resume once
+            # the way is clear.
+            paused = False
+            detections = []
+            if self.detector is not None:
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                with self._det_lock:
+                    self._det_frame = frame_rgb
+                    detections = list(self._detections)
+                h, w = frame_bgr.shape[:2]
+                paused = self._update_obstacle(detections, w, h, leds)
+
+            if not paused:
+                if fsm_phase == "turn":
+                    if fsm_dir in ("left", "turnaround"):
+                        self._apply_leds(leds, "turn_left")
+                    elif fsm_dir == "right":
+                        self._apply_leds(leds, "turn_right")
+                    else:
+                        self._apply_leds(leds, "driving")
                 else:
                     self._apply_leds(leds, "driving")
-            else:
-                self._apply_leds(leds, "driving")
-            still_running = self.intersection_fsm.update(wheels, frame_bgr)
+            still_running = self.intersection_fsm.update(
+                wheels, frame_bgr, paused=paused
+            )
             if not still_running:
                 self._current_heading = apply_maneuver(
                     self._current_heading, self.intersection_fsm._direction
@@ -577,7 +605,13 @@ class NavigationAgent:
                 self._transition("driving")
             if frame_bgr is not None:
                 debug_frame = build_debug_frame(
-                    frame_bgr, None, None, None, self.state, fsm_phase, 0.0
+                    draw_detections(frame_bgr, detections),
+                    None,
+                    None,
+                    None,
+                    self.state,
+                    "obstacle" if paused else fsm_phase,
+                    0.0,
                 )
             return True
 
