@@ -115,7 +115,7 @@ OBSTACLE_ZONE_Y = 0.45
 
 # Horizontal band (fractions of frame width) the bbox centre must fall inside —
 # objects outside it are in the oncoming lane / off the road
-OBSTACLE_ZONE_X = (0.15, 0.85)
+OBSTACLE_ZONE_X = (0.34, 0.75)
 
 # Consecutive frames with / without an obstacle before stopping / resuming
 OBSTACLE_STOP_FRAMES = 2
@@ -459,7 +459,7 @@ class NavigationAgent:
         if y2 < h * OBSTACLE_ZONE_Y:
             return False
         cx = (x1 + x2) / 2.0
-        return w * OBSTACLE_ZONE_X[0] <= cx <= w * OBSTACLE_ZONE_X[1]
+        return w * OBSTACLE_ZONE_X[0] <= cx <= w * OBSTACLE_ZONE_X[1] 
 
     def _apply_leds(self, leds, mode):
         # LED indices: 0=front-left, 2=front-right, 3=back-right, 4=back-left
