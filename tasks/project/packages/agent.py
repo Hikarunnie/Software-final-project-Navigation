@@ -588,13 +588,17 @@ class NavigationAgent:
                 wheels, frame_bgr, paused=paused
             )
             if not still_running:
-                self._current_heading = apply_maneuver(
-                    self._current_heading, self.intersection_fsm._direction
-                )
+                self._current_heading = apply_maneuver(self._current_heading, self.intersection_fsm._direction)
+
                 print(f"[Heading] now '{self._current_heading}'", flush=True)
+
                 self._advance_node()
                 self.current_route = None
                 self._route_initialized = False
+                self._obstacle_stopped = False
+                self._obstacle_streak = 0
+                self._clear_streak = 0
+
                 # Start at negative value so robot drives RED_REARM_FRAMES frames
                 # before red line detection is armed — avoids re-triggering on
                 # the same intersection's other red lines during exit.
@@ -603,6 +607,8 @@ class NavigationAgent:
                 self.lane_follower._prev_error = 0.0
                 self.lane_follower._filtered_error = 0.0
                 self._transition("driving")
+
+
             if frame_bgr is not None:
                 debug_frame = build_debug_frame(
                     draw_detections(frame_bgr, detections),
@@ -697,9 +703,10 @@ class NavigationAgent:
                         f"route={self.current_route.get('path') if self.current_route else None}",
                         flush=True,
                     )
-                    direction = get_direction_from_route(
-                        server.current_node, self.current_route
-                    )
+                    direction = get_direction_from_route(  server.current_node, self.current_route)
+                    self._obstacle_stopped = False
+                    self._obstacle_streak = 0
+                    self._clear_streak = 0
                     self.intersection_fsm.start(direction)
                     self._transition("crossing")
 
