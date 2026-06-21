@@ -85,7 +85,7 @@ TURN_TIME_RIGHT = 0.15 if not _IS_REAL else 0.55
 
 # Seconds to rotate for a U-turn (turnaround). Rotates the same direction as a
 # left turn, just held longer so the robot swings ~180° instead of ~90°.
-TURN_TIME_TURNAROUND = 0.08 if not _IS_REAL else 1.85
+TURN_TIME_TURNAROUND = 0.95 if not _IS_REAL else 1.85
 
 TURN_TIMES = {
     "forward": TURN_TIME_FORWARD,
