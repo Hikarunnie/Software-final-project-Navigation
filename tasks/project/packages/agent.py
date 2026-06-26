@@ -65,6 +65,7 @@ EXIT_SPEED = 0.20 if not _IS_REAL else 0.3
 # Speed of each wheel during a left/right rotation at an intersection
 TURN_SPEED = 0.20 if not _IS_REAL else 0.3
 
+
 # ── Timings ───────────────────────────────────────────────────────────────────
 
 # How long (seconds) to creep forward over the red line before starting the turn
