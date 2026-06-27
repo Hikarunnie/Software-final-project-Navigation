@@ -105,9 +105,10 @@ RED_REARM_FRAMES = 20  # frames to ignore red lines after finishing a crossing
 # (prevents triggering on the same intersection's other lines)
 
 # ── Object detection ──────────────────────────────────────────────────────────
-# Classes that make the robot stop: 0 = duckie, 1 = truck (other robots).
-# Signs (2) are detected and drawn in the debug view but never block driving.
-OBSTACLE_CLASSES = (0, 1)
+# Only duckies (class 0) stop the robot via the ML model. Other Duckiebots
+# ("truck") are detected by their blue chassis instead (see detect_blue_robot),
+# because the model is unreliable on robots. Signs (2) are drawn but never block.
+OBSTACLE_CLASSES = (0,)
 
 # Ignore detections with a bbox smaller than this (px²) — too far away to matter
 OBSTACLE_MIN_AREA = 2500
@@ -123,6 +124,28 @@ OBSTACLE_ZONE_X = (0.34, 0.75)
 # Consecutive frames with / without an obstacle before stopping / resuming
 OBSTACLE_STOP_FRAMES = 2
 OBSTACLE_CLEAR_FRAMES = 8
+
+# ── Blue robot detection (colour + shape, no ML model) ────────────────────────
+# Other Duckiebots / sim trucks have a distinctive saturated-blue chassis. We
+# stop when a large, coherent blue blob is ahead — centre inside the forward band
+# and large enough to be close. Closeness is judged mainly by AREA, not by how
+# low the blob sits, because a tall truck fills the UPPER frame as it nears (its
+# base never reaches the bottom). The top strip is ignored so a pale-blue sky and
+# far background don't trigger, and we require decent saturation for the same.
+BLUE_LOWER = np.array([100, 90, 40])
+BLUE_UPPER = np.array([135, 255, 255])
+# Forward band the blob centre must fall in while lane-following. We drive on the
+# RIGHT of our lane, so the opposing lane sits in the left portion of the image —
+# keep the left edge at ~0.38 so an oncoming truck on the left is NOT treated as
+# an obstacle. The right edge is generous (no oncoming traffic from the right).
+BLUE_ZONE_X = (0.38, 0.82)
+# At an intersection there is no "oncoming lane" to ignore and the robot is
+# turning, so a robot can appear anywhere across the frame. Use a near-full-width
+# band while crossing so it's detected wherever it is (like the duck model).
+BLUE_ZONE_X_WIDE = (0.05, 0.95)
+BLUE_TOP_IGNORE = 0.10          # ignore the top 10% of the frame (sky/background)
+BLUE_MIN_BOTTOM_Y = 0.28        # blob bottom must reach below this frac (real object)
+BLUE_MIN_AREA_FRAC = 0.010      # min blob area as a fraction of the whole frame
 
 # ============================================================================
 # RED LINE DETECTION
@@ -170,6 +193,76 @@ def detect_red_line(image):
         return False, mask
 
     return True, mask
+
+
+# ============================================================================
+# BLUE ROBOT DETECTION (colour + shape, no ML model)
+# ============================================================================
+
+
+def detect_blue_robot(frame_bgr, zone_x=None):
+    """Detect another Duckiebot / truck ahead by its blue chassis.
+
+    Returns (found, bbox). Pure colour + shape, no ML. A blob counts when it is
+    saturated blue, large enough (close), its centre is in the horizontal band
+    ``zone_x`` (defaults to the narrow forward band; pass BLUE_ZONE_X_WIDE at
+    intersections), and it isn't confined to the very top of the frame. Closeness
+    is judged by area rather than how low the blob sits, so a tall truck filling
+    the upper frame is still caught before we hit it.
+    """
+    if frame_bgr is None or len(frame_bgr.shape) != 3:
+        return False, None
+
+    zone_x = zone_x if zone_x is not None else BLUE_ZONE_X
+    h, w = frame_bgr.shape[:2]
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
+    # Drop the top strip so a pale-blue sky / far background can't trigger us.
+    mask[: int(BLUE_TOP_IGNORE * h), :] = 0
+    # Open removes small specks; close bridges the white centre panel so the two
+    # blue halves of the chassis merge into a single body.
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    )
+    mask = cv2.morphologyEx(
+        mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
+    )
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    min_area = BLUE_MIN_AREA_FRAC * w * h
+    best, best_area = None, 0.0
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < min_area or area <= best_area:
+            continue
+        x, y, bw, bh = cv2.boundingRect(c)
+        cx = x + bw / 2.0
+        if not (w * zone_x[0] <= cx <= w * zone_x[1]):
+            continue
+        # Reject blobs stuck near the very top (far background), but allow tall
+        # near trucks whose base sits around mid-frame.
+        if (y + bh) < h * BLUE_MIN_BOTTOM_Y:
+            continue
+        best, best_area = (x, y, x + bw, y + bh), area
+
+    return (best is not None), best
+
+
+def draw_blue_robot(frame_bgr, bbox):
+    if bbox is None:
+        return frame_bgr
+    x1, y1, x2, y2 = bbox
+    cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), (255, 0, 0), 2)
+    cv2.putText(
+        frame_bgr,
+        "robot (blue)",
+        (x1, max(14, y1 - 6)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (255, 0, 0),
+        2,
+    )
+    return frame_bgr
 
 
 # ============================================================================
@@ -504,10 +597,14 @@ class NavigationAgent:
         except Exception:
             pass
 
-    def _update_obstacle(self, detections, w, h, leds):
-        """Returns True while the robot should stay stopped for an obstacle."""
+    def _update_obstacle(self, detections, w, h, leds, blue_ahead=False):
+        """Returns True while the robot should stay stopped for an obstacle.
+
+        An obstacle is a duckie detected by the model OR a blue robot detected by
+        colour (blue_ahead) directly in front.
+        """
         blocking = [d for d in detections if self._is_obstacle(d, w, h)]
-        if blocking:
+        if blocking or blue_ahead:
             self._obstacle_streak += 1
             self._clear_streak = 0
         else:
@@ -522,6 +619,8 @@ class NavigationAgent:
         elif self._obstacle_streak >= OBSTACLE_STOP_FRAMES:
             self._obstacle_stopped = True
             labels = sorted({CLASS_NAMES.get(d[2], str(d[2])) for d in blocking})
+            if blue_ahead:
+                labels.append("robot")
             print(
                 f"[Agent] Obstacle ahead ({', '.join(labels)}) — stopping", flush=True
             )
@@ -558,6 +657,7 @@ class NavigationAgent:
         red_mask = None
         fsm_phase = None
         detections = []
+        blue_bbox = None
 
         if self.state == "completed":
             wheels.set_wheels_speed(0.0, 0.0)
@@ -577,13 +677,16 @@ class NavigationAgent:
             # the way is clear.
             paused = False
             detections = []
+            h, w = frame_bgr.shape[:2]
+            # Crossing an intersection: detect a robot anywhere across the frame,
+            # not just in the narrow forward lane band.
+            blue_ahead, blue_bbox = detect_blue_robot(frame_bgr, BLUE_ZONE_X_WIDE)
             if self.detector is not None:
                 frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                 with self._det_lock:
                     self._det_frame = frame_rgb
                     detections = list(self._detections)
-                h, w = frame_bgr.shape[:2]
-                paused = self._update_obstacle(detections, w, h, leds)
+            paused = self._update_obstacle(detections, w, h, leds, blue_ahead)
 
             if not paused:
                 if fsm_phase == "turn":
@@ -622,7 +725,7 @@ class NavigationAgent:
 
             if frame_bgr is not None:
                 debug_frame = build_debug_frame(
-                    draw_detections(frame_bgr, detections),
+                    draw_blue_robot(draw_detections(frame_bgr, detections), blue_bbox),
                     None,
                     None,
                     None,
@@ -634,24 +737,29 @@ class NavigationAgent:
 
         if self.state == "driving":
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            h, w = frame_bgr.shape[:2]
+
+            # Blue-chassis robot detection is colour-based, so it runs even
+            # without the ML model loaded.
+            blue_ahead, blue_bbox = detect_blue_robot(frame_bgr)
 
             if self.detector is not None:
                 with self._det_lock:
                     self._det_frame = frame_rgb
                     detections = list(self._detections)
-                h, w = frame_bgr.shape[:2]
-                if self._update_obstacle(detections, w, h, leds):
-                    wheels.set_wheels_speed(0.0, 0.0)
-                    debug_frame = build_debug_frame(
-                        draw_detections(frame_bgr, detections),
-                        None,
-                        None,
-                        None,
-                        self.state,
-                        "obstacle",
-                        0.0,
-                    )
-                    return True
+
+            if self._update_obstacle(detections, w, h, leds, blue_ahead):
+                wheels.set_wheels_speed(0.0, 0.0)
+                debug_frame = build_debug_frame(
+                    draw_blue_robot(draw_detections(frame_bgr, detections), blue_bbox),
+                    None,
+                    None,
+                    None,
+                    self.state,
+                    "obstacle",
+                    0.0,
+                )
+                return True
 
             self._apply_leds(leds, "driving")
             left, right = self.lane_follower.compute_commands(frame_rgb)
@@ -724,7 +832,7 @@ class NavigationAgent:
         if frame_bgr is not None:
             di = self.lane_follower.last_debug_info
             debug_frame = build_debug_frame(
-                raw_bgr=draw_detections(frame_bgr, detections),
+                raw_bgr=draw_blue_robot(draw_detections(frame_bgr, detections), blue_bbox),
                 mask_yellow=di.get("yellow_mask"),
                 mask_white=di.get("white_mask"),
                 mask_red=red_mask,

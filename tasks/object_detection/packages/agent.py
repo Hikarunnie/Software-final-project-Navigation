@@ -90,34 +90,100 @@ class ObjectDetectionAgent:
         except (ImportError, OSError):
             return False
 
+    def _engine_cache_path(self) -> str:
+        """Path of the serialized TensorRT engine cached next to the ONNX."""
+        return os.path.splitext(self.model_path)[0] + '.engine'
+
+    def _load_cached_engine(self, runtime):
+        """Deserialize a cached engine from disk, or return None to rebuild.
+
+        The cache is reused only if it exists and is newer than the ONNX, so
+        re-exporting the model automatically invalidates a stale engine. A
+        TensorRT engine is device/version specific; if it was built on a
+        different setup, deserialize raises and we fall back to rebuilding.
+        """
+        cache = self._engine_cache_path()
+        try:
+            if not os.path.isfile(cache):
+                return None
+            if os.path.getmtime(cache) < os.path.getmtime(self.model_path):
+                print("[ObjectDetection] Cached engine older than model — rebuilding.")
+                return None
+            with open(cache, 'rb') as f:
+                engine = runtime.deserialize_cuda_engine(f.read())
+            if engine is not None:
+                print(f"[ObjectDetection] Loaded cached TensorRT engine "
+                      f"({os.path.basename(cache)}) — skipped compile.")
+            return engine
+        except Exception as e:
+            print(f"[ObjectDetection] Cached engine load failed ({e}) — rebuilding.")
+            return None
+
+    def _save_cached_engine(self, data: bytes):
+        cache = self._engine_cache_path()
+        try:
+            with open(cache, 'wb') as f:
+                f.write(data)
+            print(f"[ObjectDetection] Cached TensorRT engine → "
+                  f"{os.path.basename(cache)} (fast load next time).")
+        except Exception as e:
+            print(f"[ObjectDetection] Could not cache engine ({e}).")
+
+    def _compile_trt_engine(self, trt, logger, runtime):
+        """Parse the ONNX, build a serialized engine, cache it, return the engine."""
+        print("[ObjectDetection] Compiling TensorRT engine "
+              "(~1 min; cached for subsequent startups)...")
+        builder = trt.Builder(logger)
+        network = builder.create_network(
+            1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        )
+        parser = trt.OnnxParser(network, logger)
+        with open(self.model_path, 'rb') as f:
+            if not parser.parse(f.read()):
+                for i in range(parser.num_errors):
+                    print(f"[ObjectDetection] TRT parse error: {parser.get_error(i)}")
+                self.load_error = "TRT ONNX parse failed"
+                return None
+
+        config = builder.create_builder_config()
+        config.max_workspace_size = 1 << 28
+
+        # build_serialized_network is the modern API (TRT 8+); fall back to the
+        # older build_engine on early versions.
+        if hasattr(builder, 'build_serialized_network'):
+            serialized = builder.build_serialized_network(network, config)
+            if serialized is None:
+                self.load_error = "TRT build returned None"
+                print(f"[ObjectDetection] {self.load_error}")
+                return None
+            data = bytes(serialized)
+            self._save_cached_engine(data)
+            return runtime.deserialize_cuda_engine(data)
+
+        engine = builder.build_engine(network, config)
+        if engine is None:
+            self.load_error = "TRT build returned None"
+            print(f"[ObjectDetection] {self.load_error}")
+            return None
+        self._save_cached_engine(bytes(engine.serialize()))
+        return engine
+
     def _build_trt_engine(self):
-        """Compiles ONNX to TensorRT engine in memory and sets up inference buffers."""
+        """Sets up TensorRT inference, loading a cached engine when available so
+        startup is seconds instead of ~1 minute on every run."""
         try:
             import tensorrt as trt
             import ctypes
             cudart = ctypes.CDLL('libcudart.so')
 
-            print("[ObjectDetection] Compiling TensorRT engine (~1 min)...")
             logger  = trt.Logger(trt.Logger.WARNING)
-            builder = trt.Builder(logger)
-            network = builder.create_network(
-                1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-            )
-            parser = trt.OnnxParser(network, logger)
-            with open(self.model_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    for i in range(parser.num_errors):
-                        print(f"[ObjectDetection] TRT parse error: {parser.get_error(i)}")
-                    self.load_error = "TRT ONNX parse failed"
-                    return
+            runtime = trt.Runtime(logger)
 
-            config = builder.create_builder_config()
-            config.max_workspace_size = 1 << 28
-            engine = builder.build_engine(network, config)
+            engine = self._load_cached_engine(runtime)
             if engine is None:
-                self.load_error = "TRT build returned None"
-                print(f"[ObjectDetection] {self.load_error}")
-                return
+                engine = self._compile_trt_engine(trt, logger, runtime)
+            if engine is None:
+                return  # load_error already set by the compile step
 
             context = engine.create_execution_context()
             host_in, host_out, dev_ptrs = [], [], []

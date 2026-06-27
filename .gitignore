@@ -56,3 +56,6 @@ htmlcov/
 
 # Dataset
 tasks/object_detection/dataset/*
+
+# Cached TensorRT engine (device/version specific, rebuilt automatically)
+*.engine
