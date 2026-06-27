@@ -74,11 +74,14 @@ FORWARD_CLEAR_TIME = 0.55 if not _IS_REAL else 1.15
 # If lane is found earlier (300px detected), exits immediately.
 EXIT_TIMEOUT = 4.0 if not _IS_REAL else 3.0
 
-# Seconds to drive straight forward through a forward intersection (no turn)
-TURN_TIME_FORWARD = 10 if not _IS_REAL else 1.4
+# Seconds to drive straight forward through a forward intersection (no turn).
+# This now drives the *entire* crossing (no early lane-search exit), so it must
+# be long enough to fully clear the intersection without overshooting — tune via
+# the "Fwd Through" slider (the real robot needs longer because the mats slow it).
+TURN_TIME_FORWARD = 1.0 if not _IS_REAL else 2.5
 
 # Seconds to rotate left at an intersection
-TURN_TIME_LEFT = 0.2 if not _IS_REAL else 0.7
+TURN_TIME_LEFT = 0.25 if not _IS_REAL else 0.7
 
 # Seconds to rotate right at an intersection
 TURN_TIME_RIGHT = 0.15 if not _IS_REAL else 0.55
@@ -310,9 +313,6 @@ class IntersectionFSM:
         if phase == "clear":
             self._phase_end = now + FORWARD_CLEAR_TIME
         elif phase == "turn":
-            if self._direction == "forward":
-                self._enter_phase("exit")
-                return
             self._phase_end = now + TURN_TIMES[self._direction]
         elif phase == "exit":
             self._phase_end = now + EXIT_TIMEOUT
@@ -340,7 +340,12 @@ class IntersectionFSM:
 
         elif self._phase == "turn":
             if self._direction == "forward":
-                wheels.set_wheels_speed(CREEP_SPEED, CREEP_SPEED)
+                # Drive straight through the entire intersection with equal wheel
+                # speeds for the full TURN_TIME_FORWARD ("Fwd Through") duration.
+                # No early lane-search exit, so it commits to clearing the mats
+                # instead of timing out mid-crossing and turning onto the wrong
+                # markings.
+                wheels.set_wheels_speed(EXIT_SPEED, EXIT_SPEED)
             elif self._direction == "left":
                 wheels.set_wheels_speed(TURN_SPEED*TURN_BIAS_LOW, TURN_SPEED*TURN_BIAS_HIGH)
             elif self._direction == "turnaround":
@@ -348,6 +353,12 @@ class IntersectionFSM:
             else:
                 wheels.set_wheels_speed(TURN_SPEED*TURN_BIAS_HIGH, TURN_SPEED*TURN_BIAS_LOW)
             if finished:
+                # Forward has fully crossed — resume lane following directly.
+                # Turns still hand off to the lane-search exit phase to
+                # re-acquire the lane after rotating.
+                if self._direction == "forward":
+                    self._enter_phase("done")
+                    return False
                 self._enter_phase("exit")
 
         elif self._phase == "exit":

@@ -14,7 +14,7 @@ def filter_by_classes(pred_class: int) -> bool:
 
 
 def filter_by_scores(score: float) -> bool:
-    return score >= 0.5
+    return score >= 0.4
 
 
 def filter_by_bboxes(bbox: Tuple[int, int, int, int]) -> bool:
